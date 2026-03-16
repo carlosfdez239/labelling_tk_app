@@ -1,0 +1,4 @@
+openpyxl
+pylibdmtx
+Pillow
+screeninfo

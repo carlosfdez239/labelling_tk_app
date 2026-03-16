@@ -1,6 +1,6 @@
 {
-    "IMPRESORA": "Brother_QL-820NWB",
-    "DIRECTORIO_LOGO": "/home/ws-prod23/Documentos/labelling_tk_app/images/",
+    "IMPRESORA": "Maswer_Printer",
+    "DIRECTORIO_LOGO": "/home/ws-prod23/labelling_tk_app/images/",
     "font_path": "/usr/share/fonts/truetype/Rubik/Rubik-Light.ttf",
     "Rubik_font_path":"/usr/share/fonts/truetype/Rubik/Rubik-Light.ttf",
     "batch": "225"
