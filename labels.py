@@ -18,6 +18,7 @@ import os
 import json
 import datetime
 from screeninfo import get_monitors
+from tkinter import font as tkfont
 
 # --- Configuración y Carga ---
 def load_config(file_path="config.json"):
@@ -123,24 +124,24 @@ def switch_view():
         widget.destroy()
     
     if mode == 1:
-        tk.Label(dynamic_container, text="Archivo Excel:").grid(row=0, column=0, sticky="w")
-        tk.Entry(dynamic_container, textvariable=file_entry_var, width=60).grid(row=0, column=1, padx=5)
-        tk.Button(dynamic_container, text="...", command=lambda: file_entry_var.set(filedialog.askopenfilename())).grid(row=0, column=2)
-        tk.Label(dynamic_container, text="Escanear/Filtrar:").grid(row=1, column=0, sticky="w", pady=10)
-        tk.Entry(dynamic_container, textvariable=filter_value, width=60).grid(row=1, column=1)
-        tk.Button(dynamic_container, text="Buscar", command=search_record).grid(row=1, column=2)
+        tk.Label(dynamic_container, text="Archivo Excel:", font=fuente_labels).grid(row=0, column=0, sticky="w")
+        tk.Entry(dynamic_container, textvariable=file_entry_var, width=60, font=fuente_entradas).grid(row=0, column=1, padx=5)
+        tk.Button(dynamic_container, text="...", font=fuente_botones, command=lambda: file_entry_var.set(filedialog.askopenfilename())).grid(row=0, column=2)
+        tk.Label(dynamic_container, text="Escanear/Filtrar:", font=fuente_labels).grid(row=1, column=0, sticky="w", pady=10)
+        tk.Entry(dynamic_container, textvariable=filter_value, width=60, font=fuente_entradas).grid(row=1, column=1)
+        tk.Button(dynamic_container, text="Buscar", font=fuente_botones ,command=search_record).grid(row=1, column=2)
     elif mode == 2:
         fields = [("Model:", manual_model), ("Brand:", manual_brand), ("PN:", manual_pn), ("Serial:", manual_sn), ("Batch:", manual_batch)]
         for i, (txt, var) in enumerate(fields):
-            tk.Label(dynamic_container, text=txt).grid(row=i, column=0, sticky="w", pady=2)
-            tk.Entry(dynamic_container, textvariable=var, width=50).grid(row=i, column=1, sticky="w")
+            tk.Label(dynamic_container, text=txt, font=fuente_labels).grid(row=i, column=0, sticky="w", pady=2)
+            tk.Entry(dynamic_container, textvariable=var,font=fuente_entradas, width=50).grid(row=i, column=1, sticky="w")
     elif mode == 3:
-        tk.Label(dynamic_container, text="Model:").grid(row=0, column=0, sticky="w")
-        tk.Entry(dynamic_container, textvariable=manual_model, width=50).grid(row=0, column=1, sticky="w")
-        tk.Label(dynamic_container, text="PN:").grid(row=1, column=0, sticky="w")
-        tk.Entry(dynamic_container, textvariable=manual_pn, width=50).grid(row=1, column=1, sticky="w")
-        tk.Label(dynamic_container, text="Nº Copias:").grid(row=2, column=0, sticky="w", pady=10)
-        tk.Entry(dynamic_container, textvariable=num_copias_var, width=10).grid(row=2, column=1, sticky="w")
+        tk.Label(dynamic_container, text="Model:", font=fuente_labels).grid(row=0, column=0, sticky="w")
+        tk.Entry(dynamic_container, textvariable=manual_model,font=fuente_entradas, width=50).grid(row=0, column=1, sticky="w")
+        tk.Label(dynamic_container, text="PN:", font=fuente_labels).grid(row=1, column=0, sticky="w")
+        tk.Entry(dynamic_container, textvariable=manual_pn, font=fuente_entradas, width=50).grid(row=1, column=1, sticky="w")
+        tk.Label(dynamic_container, text="Nº Copias:", font=fuente_labels).grid(row=2, column=0, sticky="w", pady=10)
+        tk.Entry(dynamic_container, textvariable=num_copias_var, font= fuente_entradas, width=10).grid(row=2, column=1, sticky="w")
 
 def search_record():
     file_path, filter_val = file_entry_var.get(), filter_value.get()
@@ -164,7 +165,11 @@ def display_label():
             datam = f"{m};{s};{BATCH_N}"
             path = Impr_Node_packaging_label(datam, m, brand, p, s)
         elif mode == 2:
-            brand, m, p, s = manual_brand.get(), manual_model.get(), manual_pn.get(), manual_sn.get()
+            brand, m, p = manual_brand.get(), manual_model.get(), manual_pn.get(),
+            s =  manual_sn.get()
+            print(f"valor leido para el serial --> {s}\n")
+            s = s.split(";")[1]
+            print(f"valor transformado para el serial --> {s}\n")
             b = manual_batch.get() if manual_batch.get() else BATCH_N
             datam = f"{p};{s};{b}"
             path = Impr_Node_packaging_label(datam, m, brand, p, s)
@@ -204,10 +209,14 @@ root.title("WS Labelling - Rev 3.0")
 monitor = get_monitors()[0]
 root.geometry(f"{monitor.width}x{monitor.height}")
 
+fuente_labels = tkfont.Font(family="Arial", size=30, weight="normal")
+fuente_botones = tkfont.Font(family="Arial", size=30, weight="bold")
+fuente_entradas = tkfont.Font(family="Arial", size=20)
+
 selected_mode = tk.IntVar(value=1)
 file_entry_var, filter_value = tk.StringVar(), tk.StringVar()
 label1_value, label2_value, label3_value = tk.StringVar(value="N/A"), tk.StringVar(value="N/A"), tk.StringVar(value="N/A")
-manual_model, manual_brand, manual_pn, manual_sn, manual_batch = tk.StringVar(), tk.StringVar(value="LOADSENSING G7"), tk.StringVar(), tk.StringVar(), tk.StringVar()
+manual_model, manual_brand, manual_pn, manual_sn, manual_batch = tk.StringVar(), tk.StringVar(value="LOADSENSING G7",), tk.StringVar(), tk.StringVar(), tk.StringVar()
 num_copias_var = tk.StringVar(value="1")
 
 # Header UI
@@ -217,15 +226,15 @@ try:
     canvas_logo.create_image(10, 10, anchor="nw", image=ws_logo_ui)
 except: pass
 
-m_frame = tk.LabelFrame(root, text="Tipo de etiqueta", padx=10, pady=5); m_frame.pack(fill="x", padx=20)
+m_frame = tk.LabelFrame(root, text="Tipo de etiqueta", font=fuente_labels ,padx=10, pady=5); m_frame.pack(fill="x", padx=20)
 for i, txt in enumerate(["Archivo", "Dispositivo Manual", "Accesorio Manual"], 1):
-    tk.Radiobutton(m_frame, text=txt, variable=selected_mode, value=i, command=switch_view).pack(side="left", padx=10)
+    tk.Radiobutton(m_frame, text=txt, font=fuente_labels ,variable=selected_mode, value=i, command=switch_view).pack(side="left", padx=10)
 
 dynamic_container = tk.Frame(root, pady=15); dynamic_container.pack()
 
 b_frame = tk.Frame(root); b_frame.pack(pady=10)
-tk.Button(b_frame, text="GENERAR ETIQUETA", bg="#f0f0f0", command=display_label, width=20, height=2).pack(side="left", padx=5)
-tk.Button(b_frame, text="IMPRIMIR", bg="#d1ffd1", command=print_label, width=20, height=2).pack(side="left", padx=5)
+tk.Button(b_frame, text="GENERAR ETIQUETA", bg="#f0f0f0", font=fuente_botones,command=display_label, width=20, height=2).pack(side="left", padx=5)
+tk.Button(b_frame, text="IMPRIMIR", bg="#d1ffd1", font=fuente_botones,command=print_label, width=20, height=2).pack(side="left", padx=5)
 
 label_preview = tk.Label(root, bg="white", relief="solid", width=650, height=450); label_preview.pack(pady=10)
 
