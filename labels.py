@@ -68,7 +68,7 @@ def Impr_Node_packaging_label(datam, Model, Brand, ERP_Code, Serial_N):
     # DataMatrix e Iconos
     encoded = encode(datam.encode('utf8'))
     dmtx = Image.frombytes('RGB', (encoded.width, encoded.height), encoded.pixels).resize((int(10 * mm_to_px), int(10 * mm_to_px)))
-    label.paste(dmtx, (int(34 * mm_to_px), int(10 * mm_to_px)))
+    label.paste(dmtx, (int(36 * mm_to_px), int(10 * mm_to_px)))
     
     try:
         icons = Image.open(os.path.join(DIRECTORIO_LOGO, "iconos.png"))
@@ -167,9 +167,9 @@ def display_label():
         elif mode == 2:
             brand, m, p = manual_brand.get(), manual_model.get(), manual_pn.get(),
             s =  manual_sn.get()
-            print(f"valor leido para el serial --> {s}\n")
+            #print(f"valor leido para el serial --> {s}\n")
             s = s.split(";")[1]
-            print(f"valor transformado para el serial --> {s}\n")
+            #print(f"valor transformado para el serial --> {s}\n")
             b = manual_batch.get() if manual_batch.get() else BATCH_N
             datam = f"{p};{s};{b}"
             path = Impr_Node_packaging_label(datam, m, brand, p, s)
