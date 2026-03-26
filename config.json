@@ -1,5 +1,6 @@
 {
     "IMPRESORA": "Maswer_Printer",
+    "PRODUCT_PRINTER": "Product_Printer",
     "DIRECTORIO_LOGO": "/home/ws-prod23/labelling_tk_app/images/",
     "font_path": "/usr/share/fonts/truetype/Rubik/Rubik-Light.ttf",
     "Rubik_font_path":"/usr/share/fonts/truetype/Rubik/Rubik-Light.ttf",
