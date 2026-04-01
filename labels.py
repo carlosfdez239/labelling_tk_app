@@ -110,18 +110,63 @@ def Impr_GW_packaging_label(datam, Model, ERP, SN, MAC, GW_ID):
     label.save(path); return path
 
 def Impr_Node_Product_label(datam, Model, Brand, ERP_Code):
-    mm_to_px = 11.81
+    
+    mm_to_px = 11.81  # 300 DPI
+    #width, height = int(71 * mm_to_px), int(41 * mm_to_px)
+    #width, height = int(51 * mm_to_px), int(35 * mm_to_px)
     width, height = int(55 * mm_to_px), int(35 * mm_to_px)
+
     label = Image.new("RGB", (width, height), "white")
     draw = ImageDraw.Draw(label)
-    try: font_main = ImageFont.truetype(RUBIK_FONT_PATH, 22)
-    except: font_main = ImageFont.load_default()
-    draw.text((1 * mm_to_px, 12 * mm_to_px), f"MODEL: {Model}", font=font_main, fill="black")
-    draw.text((1 * mm_to_px, 15 * mm_to_px), f"BRAND: {Brand}", font=font_main, fill="black")
-    draw.text((1 * mm_to_px, 18 * mm_to_px), f"PN: {ERP_Code}", font=font_main, fill="black")
-    #path = os.path.expanduser("~/labelling_tk_app/output_producto.png")
-    path = os.path.join(BASE_DIR, "output_producto.png")
-    label.save(path); return path
+
+    try:
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+        font_main = ImageFont.truetype(RUBIK_FONT_PATH, 22)
+        font_small = ImageFont.truetype(RUBIK_FONT_PATH, 15)
+        font_direction = ImageFont.truetype(RUBIK_FONT_PATH, 18)
+    except:
+        font_main = font_small = ImageFont.load_default()
+
+    # Logo e Info
+    try:
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+        logo_path = os.path.join(BASE_DIR, "images", "W_Label_Devices_new.png")
+        logo = Image.open(logo_path).resize((int(33 * mm_to_px), int(7 * mm_to_px)))
+        label.paste(logo, (1, 4))
+    except: pass
+
+    draw.text((1 * mm_to_px, 8 * mm_to_px), "Viriat 47, 10th Floor, 08014 Barcelona, Spain", font=font_direction, fill="black")
+
+    # Datos
+    y_pos, spacing = 12 * mm_to_px, 2 * mm_to_px
+    draw.text((1 * mm_to_px, y_pos), f"MODEL:  {Model}", font=font_main, fill="black")
+    draw.text((1 * mm_to_px, y_pos + spacing), f"BRAND:  {Brand}", font=font_main, fill="black")
+    draw.text((1 * mm_to_px, y_pos + spacing * 2), f"PN:  {ERP_Code}", font=font_main, fill="black")
+    draw.text((1 * mm_to_px, y_pos + spacing * 3), f"MADE IN SPAIN", font=font_main, fill="black")
+    draw.text((1 * mm_to_px, y_pos + spacing * 4), f"CONTAINS FCC ID 2AHN4-WSBRDLR112X, SQG-LYRAP", font=font_main, fill="black")
+    draw.text((1 * mm_to_px, y_pos + spacing * 5), f"CONTAINS IC ID 21260-WSBRDLR112X, 3147A-LYRAP", font=font_main, fill="black")
+    draw.text((1 * mm_to_px, y_pos + spacing * 7), f"This device complies with part 15 of the FCC Rules. Operation is subjet to the following", font=font_small, fill="black")
+    draw.text((1 * mm_to_px, y_pos + spacing * 7.7), f"two conditions: (1) this device mayt not cause harmfil interference, and (2) this device must", font=font_small, fill="black")
+    draw.text((1 * mm_to_px, y_pos + spacing * 8.4), f"accept any interference received, including interference that may cause undesired operation.", font=font_small, fill="black")
+
+
+    # DataMatrix e Iconos
+    encoded = encode(datam.encode('utf8'))
+    dmtx = Image.frombytes('RGB', (encoded.width, encoded.height), encoded.pixels).resize((int(10 * mm_to_px), int(10 * mm_to_px)))
+    label.paste(dmtx, (int(38 * mm_to_px), int(5 * mm_to_px)))
+    
+    try:
+        icons = Image.open(os.path.join(DIRECTORIO_LOGO, "iconos_producto.png")).resize((int(15* mm_to_px), int(5 * mm_to_px)))
+        
+        label.paste(icons, (int(35 * mm_to_px), int(15 * mm_to_px)))
+    except: pass
+    
+    #output_path = os.path.expanduser("~/labelling_tk_app/output_producto.png")
+    output_path = os.path.join(BASE_DIR, "output_producto.png")
+    #label = label.resize(int(50 * mm_to_px), int(36 * mm_to_px))
+    label.save(output_path)
+    return output_path
+
 
 # --- Funciones de Interfaz ---
 
@@ -130,7 +175,7 @@ def switch_view():
     for widget in dynamic_container.winfo_children(): widget.destroy()
     
     # Control de visibilidad de botones e interfaz de PRODUCTO
-    if mode == 2:
+    if mode == 2 or mode == 1: # DISPOSITIVO o Archivo
         ver_producto.grid(row=0, column=2, padx=5)
         imp_producto.grid(row=0, column=3, padx=5)
         product_preview.grid(row=0, column=1, padx=10, pady=10)
@@ -211,7 +256,7 @@ def display_label():
         if ";" in s: s = s.split(";")[1]
         
         if mode == 1 or mode == 2:
-            path = Impr_Node_packaging_label(f"{p};{s};{BATCH_N}", m, manual_brand.get(), p, s)
+            path = Impr_Node_packaging_label(f"{p};{s};{manual_batch.get()}", m, manual_brand.get(), p, s)
         elif mode == 3:
             path = Impr_Acc_packaging_label(f"{p}", m, p)
         elif mode == 4:
@@ -223,7 +268,7 @@ def display_label():
 
 def display_product_label():
     try:
-        path = Impr_Node_Product_label(f"{manual_pn.get()};{BATCH_N}", manual_model.get(), manual_brand.get(), manual_pn.get())
+        path = Impr_Node_Product_label(f"{manual_pn.get()};{manual_batch.get()}", manual_model.get(), manual_brand.get(), manual_pn.get())
         img = Image.open(path); foto = IMG.PhotoImage(img)
         product_preview.config(image=foto); product_preview.image = foto
     except Exception as e: messagebox.showerror("Error", str(e))
@@ -283,7 +328,7 @@ imp_producto = tk.Button(b_frame, text="IMPRIMIR PRODUCTO", bg="#d1ffd1", font=f
 
 # Previews
 preview_frame = tk.Frame(root); preview_frame.pack(pady=10)
-label_preview = tk.Label(preview_frame, bg="white", relief="solid", width=700, height=350); label_preview.grid(row=0, column=0, padx=10)
-product_preview = tk.Label(preview_frame, bg="white", relief="solid", width=700, height=350)
+label_preview = tk.Label(preview_frame, bg="white", relief="solid", width=700, height=450); label_preview.grid(row=0, column=0, padx=10)
+product_preview = tk.Label(preview_frame, bg="white", relief="solid", width=700, height=450)
 
 switch_view(); root.mainloop()
