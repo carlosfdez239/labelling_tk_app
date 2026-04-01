@@ -286,7 +286,7 @@ def print_label():
         messagebox.showinfo("Impresión", "Enviado.")
         filter_value.set("")
         # limpiar label_preview
-        label_preview.config(image=""); label_preview.image = None
+        
         
     except Exception as e: messagebox.showerror("Error", str(e))
 
@@ -295,6 +295,9 @@ def print_product_label():
     #path = os.path.expanduser("~/labelling_tk_app/output_producto.png")
     path = os.path.join(BASE_DIR, "output_producto.png")
     if os.path.exists(path): os.system(f'lp -d {PRODUCT_PRINTER} {path}')
+    messagebox.showinfo("Impresión", "Enviado.")
+    label_preview.config(image=""); label_preview.image = None
+    product_preview.config(image=""); product_preview.image = None
 
 # --- Setup Principal ---
 root = tk.Tk(); root.title("WS Labelling - Rev 3.1")
