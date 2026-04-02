@@ -268,7 +268,7 @@ def display_label():
 
 def display_product_label():
     try:
-        path = Impr_Node_Product_label(f"{manual_pn.get()};{manual_batch.get()}", manual_model.get(), manual_brand.get(), manual_pn.get())
+        path = Impr_Node_Product_label(f"{manual_pn.get()};{manual_sn.get()};{manual_batch.get()}", manual_model.get(), manual_brand.get(), manual_pn.get())
         img = Image.open(path); foto = IMG.PhotoImage(img)
         product_preview.config(image=foto); product_preview.image = foto
     except Exception as e: messagebox.showerror("Error", str(e))
