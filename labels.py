@@ -100,7 +100,7 @@ def Impr_Acc_packaging_label(datam, Model, ERP_Code, Batch_Number):
     dmtx = Image.frombytes('RGB', (encoded.width, encoded.height), encoded.pixels).resize((int(10 * mm_to_px), int(10 * mm_to_px)))
     label.paste(dmtx, (int(34 * mm_to_px), int(10 * mm_to_px)))
     try:
-        icons = Image.open(os.path.join(DIRECTORIO_LOGO, "iconos.png"))
+        icons = Image.open(os.path.join(DIRECTORIO_LOGO, "iconos_accesorios.png"))
         label.paste(icons, (int(34 * mm_to_px), int(20 * mm_to_px)))
     except: pass
     #path = os.path.expanduser("~/labelling_tk_app/output_test2.png")
