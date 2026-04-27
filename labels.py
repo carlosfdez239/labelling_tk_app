@@ -71,7 +71,7 @@ def Impr_Node_packaging_label(datam, Model, Brand, ERP_Code, Serial_N):
     path = os.path.join(BASE_DIR, "output_test2.png")
     label.save(path); return path
 
-def Impr_Acc_packaging_label(datam, Model, ERP_Code):
+def Impr_Acc_packaging_label(datam, Model, ERP_Code, Batch_Number):
     mm_to_px = 11.81
     width, height = int(50 * mm_to_px), int(45 * mm_to_px)
     label = Image.new("RGB", (width, height), "white")
@@ -80,12 +80,29 @@ def Impr_Acc_packaging_label(datam, Model, ERP_Code):
         font_main = ImageFont.truetype(RUBIK_FONT_PATH, 26)
         font_small = ImageFont.truetype(RUBIK_FONT_PATH, 18)
     except: font_main = font_small = ImageFont.load_default()
+    
+    try:
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+        logo_path = os.path.join(BASE_DIR, "images", "W_Label_Devices_new.png")
+        logo = Image.open(logo_path).resize((int(42 * mm_to_px), int(8 * mm_to_px)))
+        label.paste(logo, (0, 0))
+    except: pass
+    draw.text((1 * mm_to_px, 7 * mm_to_px), "Viriat 47, 10th Floor, 08014 Barcelona, Spain", font=font_small, fill="black")
+    
+    
     y_pos, spacing = 14 * mm_to_px, 3 * mm_to_px
     draw.text((1 * mm_to_px, y_pos), f"MODEL:  {Model}", font=font_main, fill="black")
-    draw.text((1 * mm_to_px, y_pos + spacing * 2), f"PN:  {ERP_Code}", font=font_main, fill="black")
+    draw.text((1 * mm_to_px, y_pos + spacing), f"PN:  {ERP_Code}", font=font_main, fill="black")
+    
+    draw.text((1 * mm_to_px, y_pos + spacing * 2), f"BATCH NUMBER:  {Batch_Number}", font=font_main, fill="black")
+    
     encoded = encode(datam.encode('utf8'))
     dmtx = Image.frombytes('RGB', (encoded.width, encoded.height), encoded.pixels).resize((int(10 * mm_to_px), int(10 * mm_to_px)))
     label.paste(dmtx, (int(34 * mm_to_px), int(10 * mm_to_px)))
+    try:
+        icons = Image.open(os.path.join(DIRECTORIO_LOGO, "iconos.png"))
+        label.paste(icons, (int(34 * mm_to_px), int(20 * mm_to_px)))
+    except: pass
     #path = os.path.expanduser("~/labelling_tk_app/output_test2.png")
     path = os.path.join(BASE_DIR, "output_test2.png")
     label.save(path); return path
@@ -203,8 +220,12 @@ def switch_view():
         tk.Entry(dynamic_container, textvariable=manual_model, font=fuente_entradas, width=50).grid(row=0, column=1, sticky="w")
         tk.Label(dynamic_container, text="PN:", font=fuente_labels).grid(row=1, column=0, sticky="w")
         tk.Entry(dynamic_container, textvariable=manual_pn, font=fuente_entradas, width=50).grid(row=1, column=1, sticky="w")
-        tk.Label(dynamic_container, text="Nº Copias:", font=fuente_labels).grid(row=2, column=0, sticky="w", pady=10)
-        tk.Entry(dynamic_container, textvariable=num_copias_var, font=fuente_entradas, width=10).grid(row=2, column=1, sticky="w")
+        
+        tk.Label(dynamic_container, text="Batch:", font=fuente_labels).grid(row=2, column=0, sticky="w")
+        tk.Entry(dynamic_container, textvariable=manual_batch, font=fuente_entradas, width=50).grid(row=2, column=1, sticky="w")
+        
+        tk.Label(dynamic_container, text="Nº Copias:", font=fuente_labels).grid(row=3, column=0, sticky="w", pady=10)
+        tk.Entry(dynamic_container, textvariable=num_copias_var, font=fuente_entradas, width=10).grid(row=3, column=1, sticky="w")
     
     elif mode == 4: # GW 
         fields = [("Model:", manual_model), ("ERP:", manual_pn), ("SN:", manual_sn), ("MAC:", manual_mac), ("GW ID:", manual_gw_id)]
@@ -252,13 +273,13 @@ def search_record():
 def display_label():
     try:
         mode = selected_mode.get()
-        m, p, s = manual_model.get(), manual_pn.get(), manual_sn.get()
+        m, p, s, b = manual_model.get(), manual_pn.get(), manual_sn.get(), manual_batch.get()
         if ";" in s: s = s.split(";")[1]
         
         if mode == 1 or mode == 2:
             path = Impr_Node_packaging_label(f"{p};{s};{manual_batch.get()}", m, manual_brand.get(), p, s)
         elif mode == 3:
-            path = Impr_Acc_packaging_label(f"{p}", m, p)
+            path = Impr_Acc_packaging_label(f"{p};{b}", m, p, b)
         elif mode == 4:
             path = Impr_GW_packaging_label(f"{p};{s}", m, p, s, manual_mac.get(), manual_gw_id.get())
         
@@ -300,7 +321,7 @@ def print_product_label():
     product_preview.config(image=""); product_preview.image = None
 
 # --- Setup Principal ---
-root = tk.Tk(); root.title("WS Labelling - Rev 3.1")
+root = tk.Tk(); root.title("WS Labelling - Rev 3.2")
 monitor = get_monitors()[0]; root.geometry(f"{monitor.width}x{monitor.height}")
 fuente_labels = tkfont.Font(family="Arial", size=18); fuente_botones = tkfont.Font(family="Arial", size=14, weight="bold"); fuente_entradas = tkfont.Font(family="Arial", size=14)
 
