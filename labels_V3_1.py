@@ -5,6 +5,14 @@ Rev 3.0 --> 16/03/2026
 - Integración de campo 'BRAND'.
 - Uso de Logo PNG en cabecera y optimización de fuentes Rubik.
 - Ajuste de DataMatrix dinámico según modo.
+
+Rev 3.1 --> 20/06/2026
+- Corrección de errores en la generación de etiquetas para Accesorios. Al seleccionar un número de serie en cualquier modo,
+se generaba una etiqueta y se mostraba en todos los modos.
+- Se incorpora un nuevo modo --> "etiqueta Chile", las dimensiones serán 62mm x 62mm ubicando únicamente la imagen images/chile.png
+  centrada en la etiqueta. En este modo, el operario podrá indicar el número de copias a imprimir. Se mostrará igualmente la
+  previsualización de la etiqueta y tras pulsar sobre el botón "IMPRIMIR", se enviará a la impresora el número de copias indicado
+  y se generará el png correspondiente en la carpeta de salida.
 '''
 
 import tkinter as tk
@@ -149,6 +157,23 @@ def Impr_Acc_packaging_label(datam, Model, ERP_Code):
     label.save(output_path)
     return output_path
 
+def Impr_Chile_label():
+    mm_to_px = 11.81  # 300 DPI
+    size = int(62 * mm_to_px)
+
+    label = Image.new("RGB", (size, size), "white")
+    DIRECTORIO_LOGO = os.path.expanduser("~/Documents/Testing/labelling_tk_app/images")
+    img_path = os.path.join(DIRECTORIO_LOGO, "chile.png")
+    img = Image.open(img_path)
+    img.thumbnail((size, size), Image.Resampling.LANCZOS)
+    x = (size - img.width) // 2
+    y = (size - img.height) // 2
+    label.paste(img, (x, y))
+
+    output_path = os.path.expanduser("~/Documents/Testing/labelling_tk_app/output_chile.png")
+    label.save(output_path)
+    return output_path
+
 # --- Interfaz Gráfica ---
 
 def switch_view():
@@ -177,6 +202,10 @@ def switch_view():
         tk.Entry(dynamic_container, textvariable=manual_model, width=50).grid(row=0, column=1, sticky="w")
         tk.Label(dynamic_container, text="PN:").grid(row=1, column=0, sticky="w")
         tk.Entry(dynamic_container, textvariable=manual_pn, width=50).grid(row=1, column=1, sticky="w")
+
+    elif mode == 4: # ETIQUETA CHILE
+        tk.Label(dynamic_container, text="Nº Copias:").grid(row=0, column=0, sticky="w", pady=10)
+        tk.Entry(dynamic_container, textvariable=num_copias_var, width=10).grid(row=0, column=1, sticky="w")
 
 def search_record():
     file_path = file_entry_var.get()
@@ -211,14 +240,17 @@ def display_label():
             b = manual_batch.get() if manual_batch.get() else batch_n
             datam = f"{p};{s};{b}"
             path = Impr_Node_packaging_label(datam, m, brand, p, s)
-        else:
+        elif mode == 3:
             print(f"Estamos en modo 3")
             m, p = manual_model.get(), manual_pn.get()
             #batch_n = Crear_Batch()
             datam = f"{p}"
             path = Impr_Acc_packaging_label(datam, m, p)
+        else:
+            print(f"Estamos en modo 4")
+            path = Impr_Chile_label()
 
-        
+
         img = Image.open(path)
         foto = IMG.PhotoImage(img)
         label_preview.config(image=foto)
@@ -226,12 +258,13 @@ def display_label():
     except Exception as e: messagebox.showerror("Error", str(e))
 
 def print_label():
-    path = os.path.expanduser("~/labelling_tk_app/output_test2.png")
+    mode = selected_mode.get()
+    path = os.path.expanduser("~/Documents/Testing/labelling_tk_app/output_chile.png") if mode == 4 else os.path.expanduser("~/Documents/Testing/labelling_tk_app/output_test2.png")
     if not os.path.exists(path): return
 
     try:
-        # Si estamos en modo Accesorios (3), leemos las copias, si no, solo 1
-        if selected_mode.get() == 3:
+        # Si estamos en modo Etiqueta Chile (4), leemos las copias, si no, solo 1
+        if mode == 4:
             try:
                 n = int(num_copias_var.get())
             except ValueError:
@@ -240,20 +273,21 @@ def print_label():
             n = 1
 
         # Bucle de impresión
+        print_opts = "-o PageSize=62X1" if mode == 4 else "-o orientation-requested=3"
         for i in range(n):
-            os.system(f'lp -o orientation-requested=3 -d {IMPRESORA} {path}')
-        
+            os.system(f'lp {print_opts} -d {IMPRESORA} {path}')
+
         messagebox.showinfo("Impresión", f"Enviadas {n} etiqueta(s) correctamente.")
-        
+
         # Limpieza tras imprimir
-        for v in [manual_model, manual_pn, manual_sn, filter_value]: 
+        for v in [manual_model, manual_pn, manual_sn, filter_value]:
             v.set("")
-            
-    except Exception as e: 
+
+    except Exception as e:
         messagebox.showerror("Error", str(e))
 # --- Setup Principal ---
 root = tk.Tk()
-root.title("WS Labelling - Rev 3.0")
+root.title("WS Labelling - Rev 3.1")
 monitor = get_monitors()[0]
 root.geometry(f"{monitor.width}x{monitor.height}")
 
@@ -261,6 +295,7 @@ selected_mode = tk.IntVar(value=1)
 file_entry_var, filter_value = tk.StringVar(), tk.StringVar()
 label1_value, label2_value, label3_value = tk.StringVar(value="N/A"), tk.StringVar(value="N/A"), tk.StringVar(value="N/A")
 manual_model, manual_brand, manual_pn, manual_sn, manual_batch = tk.StringVar(), tk.StringVar(value="LOADSENSING G7"), tk.StringVar(), tk.StringVar(), tk.StringVar()
+num_copias_var = tk.StringVar(value="1")
 
 # Header
 canvas_logo = tk.Canvas(root, height=70, highlightthickness=0)
@@ -273,7 +308,7 @@ except: pass
 # Modos
 m_frame = tk.LabelFrame(root, text="Tipo de etiqueta", padx=10, pady=5)
 m_frame.pack(fill="x", padx=20)
-for i, txt in enumerate(["Archivo", "Dispositivo Manual", "Accesorio Manual"], 1):
+for i, txt in enumerate(["Archivo", "Dispositivo Manual", "Accesorio Manual", "Etiqueta Chile"], 1):
     tk.Radiobutton(m_frame, text=txt, variable=selected_mode, value=i, command=switch_view).pack(side="left", padx=10)
 
 dynamic_container = tk.Frame(root, pady=15)
