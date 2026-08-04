@@ -489,13 +489,13 @@ log_frame.pack(side="bottom", fill="both", expand=False)
 
 log_header = tk.Frame(log_frame)
 log_header.pack(fill="x")
-tk.Label(log_header, text="Registro de actividad", font=("TkDefaultFont", 9, "bold")).pack(side="left", padx=5, pady=(4, 0))
+tk.Label(log_header , text="Registro de actividad", font=("TkDefaultFont", 9, "bold")).pack(side="left", padx=5, pady=(4, 0))
 
 log_scroll = tk.Scrollbar(log_frame)
 log_scroll.pack(side="right", fill="y")
 
 log_text = tk.Text(
-    log_frame, height=10, bg="#1e1e1e", fg="#d4d4d4",
+    log_frame, height=10, bg="white", fg="#d4d4d4",
     font=("Consolas", 9), state="disabled", yscrollcommand=log_scroll.set, wrap="none"
 )
 log_text.pack(side="bottom", fill="both", expand=True, padx=5, pady=(0, 5))
