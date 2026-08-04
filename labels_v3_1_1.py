@@ -209,6 +209,42 @@ def Impr_Node_packaging_label(datam, Model, Brand, ERP_Code, Serial_N, Batch):
     logger.info(f"Etiqueta de dispositivo generada correctamente -> {output_path}")
     return output_path
 
+def Impr_Node_packaging_label_Peru(datam, Model, ERP_Code, Serial_N, Batch):
+    mm_to_px = 11.81  # 300 DPI
+    width = int(50 * mm_to_px)
+    height = int(45 * mm_to_px)
+
+    label = Image.new("RGB", (width, height), "white")
+    draw = ImageDraw.Draw(label)
+    font_main, font_small = _cargar_fuentes()
+
+    _pegar_logo(label, draw, mm_to_px, font_main)
+    draw.text((1 * mm_to_px, 7 * mm_to_px), "Viriat 47, 10th Floor, 08014 Barcelona, Spain", font=font_small, fill="black")
+
+    y_pos = 14 * mm_to_px
+    spacing = 3 * mm_to_px
+    draw.text((1 * mm_to_px, y_pos), f"MODEL:  {Model}", font=font_main, fill="black")
+    #draw.text((1 * mm_to_px, y_pos + spacing), f"BRAND:  {Brand}", font=font_main, fill="black")
+    draw.text((1 * mm_to_px, y_pos + spacing ), f"PN:  {ERP_Code}", font=font_main, fill="black")
+    draw.text((1 * mm_to_px, y_pos + spacing * 2), f"SERIAL NUMBER:  {Serial_N}", font=font_main, fill="black")
+    draw.text((1 * mm_to_px, y_pos + spacing * 3), f"BATCH NUMBER:  {Batch}", font=font_main, fill="black")
+
+    encoded = _encode_datamatrix(datam, contexto="Dispositivo")
+    dmtx = Image.frombytes("RGB", (encoded.width, encoded.height), encoded.pixels)
+    dmtx = dmtx.resize((int(10 * mm_to_px), int(10 * mm_to_px)))
+    label.paste(dmtx, (int(34 * mm_to_px), int(10 * mm_to_px)))
+
+    icon_path = os.path.join(DIRECTORIO_LOGO, "iconos.png")
+    try:
+        icons = Image.open(icon_path)
+        label.paste(icons, (int(34 * mm_to_px), int(20 * mm_to_px)))
+    except Exception as e:
+        logger.warning(f"No se pudieron cargar los iconos regulatorios ({icon_path}): {e}")
+
+    output_path = os.path.join(OUTPUT_DIR, "output_test2.png")
+    label.save(output_path)
+    logger.info(f"Etiqueta de dispositivo generada correctamente -> {output_path}")
+    return output_path
 
 def Impr_Acc_packaging_label(datam, Model, ERP_Code):
     mm_to_px = 11.81
@@ -307,10 +343,14 @@ def switch_view():
 
 def search_record():
     file_path = file_entry_var.get()
-    filter_val = filter_value.get()
+    filter_val = filter_value.get().lower()
+    if "ñ" in filter_val:
+        filter_val = filter_val.split("ñ")[1]
     if ";" in filter_val:
         filter_val = filter_val.split(";")[1]
-
+    if "%" in filter_val:
+        filter_val = filter_val.split("%")[1]
+        
     if not file_path:
         logger.warning("No se ha seleccionado ningún archivo Excel")
         messagebox.showwarning("Aviso", "Selecciona primero un archivo Excel.")
@@ -345,10 +385,9 @@ def display_label():
 
         if mode == 1:
             logger.info("Generando etiqueta - modo 1 (Archivo)")
-            brand = manual_brand.get()
             erp_code, model, serial = label1_value.get(), label2_value.get(), label3_value.get()
             datam = f"{erp_code};{serial};{batch_n}"
-            path = Impr_Node_packaging_label(datam, model, brand, erp_code, serial, batch_n)
+            path = Impr_Node_packaging_label_Peru(datam, model, erp_code, serial, batch_n)
 
         elif mode == 2:
             logger.info("Generando etiqueta - modo 2 (Dispositivo Manual)")
