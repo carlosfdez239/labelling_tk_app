@@ -194,13 +194,13 @@ def Impr_Node_packaging_label(datam, Model, Brand, ERP_Code, Serial_N, Batch):
 
     encoded = _encode_datamatrix(datam, contexto="Dispositivo")
     dmtx = Image.frombytes("RGB", (encoded.width, encoded.height), encoded.pixels)
-    dmtx = dmtx.resize((int(10 * mm_to_px), int(10 * mm_to_px)))
+    dmtx = dmtx.resize((int(13 * mm_to_px), int(13 * mm_to_px)))
     label.paste(dmtx, (int(34 * mm_to_px), int(10 * mm_to_px)))
 
     icon_path = os.path.join(DIRECTORIO_LOGO, "iconos.png")
     try:
         icons = Image.open(icon_path)
-        label.paste(icons, (int(34 * mm_to_px), int(20 * mm_to_px)))
+        label.paste(icons, (int(34 * mm_to_px), int(24 * mm_to_px)))
     except Exception as e:
         logger.warning(f"No se pudieron cargar los iconos regulatorios ({icon_path}): {e}")
 
@@ -231,13 +231,13 @@ def Impr_Node_packaging_label_Peru(datam, Model, ERP_Code, Serial_N, Batch):
 
     encoded = _encode_datamatrix(datam, contexto="Dispositivo")
     dmtx = Image.frombytes("RGB", (encoded.width, encoded.height), encoded.pixels)
-    dmtx = dmtx.resize((int(10 * mm_to_px), int(10 * mm_to_px)))
+    dmtx = dmtx.resize((int(13 * mm_to_px), int(13 * mm_to_px)))
     label.paste(dmtx, (int(34 * mm_to_px), int(10 * mm_to_px)))
 
     icon_path = os.path.join(DIRECTORIO_LOGO, "iconos.png")
     try:
         icons = Image.open(icon_path)
-        label.paste(icons, (int(34 * mm_to_px), int(20 * mm_to_px)))
+        label.paste(icons, (int(34 * mm_to_px), int(24 * mm_to_px)))
     except Exception as e:
         logger.warning(f"No se pudieron cargar los iconos regulatorios ({icon_path}): {e}")
 
@@ -265,13 +265,13 @@ def Impr_Acc_packaging_label(datam, Model, ERP_Code):
 
     encoded = _encode_datamatrix(datam, contexto="Accesorio")
     dmtx = Image.frombytes("RGB", (encoded.width, encoded.height), encoded.pixels)
-    dmtx = dmtx.resize((int(10 * mm_to_px), int(10 * mm_to_px)))
+    dmtx = dmtx.resize((int(13 * mm_to_px), int(13 * mm_to_px)))
     label.paste(dmtx, (int(34 * mm_to_px), int(10 * mm_to_px)))
 
     icon_path = os.path.join(DIRECTORIO_LOGO, "iconos.png")
     try:
         icons = Image.open(icon_path)
-        label.paste(icons, (int(34 * mm_to_px), int(20 * mm_to_px)))
+        label.paste(icons, (int(34 * mm_to_px), int(24 * mm_to_px)))
     except Exception as e:
         logger.warning(f"No se pudieron cargar los iconos regulatorios ({icon_path}): {e}")
 
