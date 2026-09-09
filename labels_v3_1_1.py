@@ -161,7 +161,6 @@ def _cargar_fuentes():
         logger.warning(f"No se pudo cargar la fuente Rubik en '{RUBIK_FONT_PATH}' ({e}), usando fuente por defecto")
         return ImageFont.load_default(), ImageFont.load_default()
 
-
 def _pegar_logo(label, draw, mm_to_px, font_main):
     logo_path = os.path.join(IMAGES_DIR, "W_Label_Devices_new.png")
     try:
@@ -170,7 +169,6 @@ def _pegar_logo(label, draw, mm_to_px, font_main):
     except Exception as e:
         logger.warning(f"No se pudo cargar el logo ({logo_path}): {e}. Usando texto de respaldo.")
         draw.text((2 * mm_to_px, 2 * mm_to_px), "WORLDSENSING", font=font_main, fill="black")
-
 
 def Impr_Node_packaging_label(datam, Model, Brand, ERP_Code, Serial_N, Batch):
     mm_to_px = 11.81  # 300 DPI
@@ -362,7 +360,8 @@ def search_record():
         for row in sheet.iter_rows(values_only=True):
             if filter_val in row:
                 label1_value.set(row[5] if len(row) > 5 else "N/A")  # ERP Code
-                label2_value.set(str(label1_value.get()).replace("-", ""))  # Model
+                #label2_value.set(str(label1_value.get()).replace("-", ""))  # Model
+                label2_value.set(row[10] if len(row) > 5 else "N/A")  # Model
                 label3_value.set(row[13] if len(row) > 13 else "N/A")  # Serial
                 logger.info(
                     f"Unidad encontrada (serial={filter_val}) -> "
