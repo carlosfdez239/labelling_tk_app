@@ -44,8 +44,7 @@ images/ws/, images/leica/ e images/.
 
 LABEL_W_MM, LABEL_H_MM = 63, 50
 
-PRODUCT_NAME_EU = "FX4-EU"
-PRODUCT_NAME_ROW = "FX4-ROW"
+PRODUCT_NAME = "ComBox70"
 
 # --- Bloques comunes a las dos variantes -------------------------------------
 # (se copian en cada template; si un día cambian para una sola variante,
@@ -53,7 +52,7 @@ PRODUCT_NAME_ROW = "FX4-ROW"
 
 def _header():
     return [
-        {"type": "asset", "name": "ws_logo_black", "box": (3.3, 0.1, 30.0, 20.2), "align": "l"},
+        {"type": "asset", "name": "ws_logo_black", "box": (3.3, 2.8, 16.0, 10.2), "align": "l"},
         # Bloque de datos arriba a la derecha (alineado a la derecha)
         {"type": "text", "x": 58.1, "y": 6.2, "anchor": "r", "size": 4.7,
          "runs": [("bold", "Product"), ("regular", ": {product}")]},
@@ -105,19 +104,19 @@ TEMPLATE_EU = {
     "name": "EU",
     "description": "ComBox70 FX4-EU (1030653)",
     "offset": (0.0, -0.4),     # centrado en el rollo de 50 mm
-    "fixed": {"product": PRODUCT_NAME_EU, "model": "FX4-EU", "article": "1030653"},
+    "fixed": {"product": PRODUCT_NAME, "model": "FX4-EU", "article": "1030653"},
     "elements": _header() + _power() + [
         {"type": "rbox", "box": (3.3, 40.5, 56.5, 7.4), "radius": 1.0, "line": 0.3},
         {"type": "asset", "name": "ce", "box": (4.3, 41.9, 6.2, 4.6), "align": "c"},
     ] + _ip_rating(12.0) + [
         {"type": "asset", "name": "ukca", "box": (21.6, 41.8, 4.9, 4.8), "align": "c"},
-        # {"type": "lines", "x": 27.0, "y": 42.85, "lead": 1.85, "size": 4.2, "style": "regular",
-        #  "max_w": 23.4,
-        #  "lines": ["Importer: Leica Geosystems Ltd.",
-        #            "Hexagon House, Michigan Drive,",
-        #            "Tongwell, Milton Keynes, MK15 8HT"]},
-        {"type": "asset", "name": "weee", "box": (45.6, 40.8, 4.6, 6.9), "align": "c"},
-        {"type": "asset", "name": "manual_info", "box": (50.4, 42.2, 4.2, 3.9), "align": "c"},
+        {"type": "lines", "x": 27.0, "y": 42.85, "lead": 1.85, "size": 4.2, "style": "regular",
+         "max_w": 23.4,
+         "lines": ["Importer: Leica Geosystems Ltd.",
+                   "Hexagon House, Michigan Drive,",
+                   "Tongwell, Milton Keynes, MK15 8HT"]},
+        {"type": "asset", "name": "weee", "box": (50.6, 40.8, 4.6, 6.9), "align": "c"},
+        {"type": "asset", "name": "manual_info", "box": (55.4, 42.2, 4.2, 3.9), "align": "c"},
     ],
 }
 
@@ -128,7 +127,7 @@ TEMPLATE_ROW = {
     "description": "ComBox70 FX4-ROW (1030654)",
     "offset": (0.0, -0.4),     # centrado en el rollo de 50 mm
     # Nº de homologación ANATEL (Brasil). En el template aún es un marcador.
-    "fixed": {"product": PRODUCT_NAME_ROW, "model": "FX4-ROW", "article": "1030654",
+    "fixed": {"product": PRODUCT_NAME, "model": "FX4-ROW", "article": "1030654",
               "anatel": "AAAAA-BB-CCCCC"},
     "elements": _header() + _power() + [
         # Identificadores FCC / IC de los módulos de radio

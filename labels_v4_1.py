@@ -68,6 +68,12 @@ Rev 4.1 --> 10/10/2026
   LEICA_QL_CONTRAST (1.0 = sin cambio). Se releen en cada impresión, no hace
   falta reiniciar la app. El bitmap enviado se guarda en output_ql_bitmap.png.
 - Los modos 6, 7 y 8 imprimen con WS_label.print_brother_ql.
+- Etiquetas de producto (7 y 8) en Zebra ZD621 300 dpi: si ZEBRA_PRINTER está
+  definido se envían en ZPL raw (cola CUPS, IP o /dev/usb/lpX) a 12 p/mm, a
+  tamaño exacto. Ajustes en config.json: ZEBRA_DARKNESS (^MD), ZEBRA_SPEED
+  (^PR), ZEBRA_BRIGHTNESS, ZEBRA_CONTRAST, ZEBRA_ROTATE, ZEBRA_SHIFT_MM.
+  El ZPL enviado se guarda en output_zebra.zpl y su bitmap en output_zebra_bitmap.png.
+- LEICA_QL_PRINTER con un nombre de cola CUPS da un error claro.
 
 '''
 
@@ -159,17 +165,36 @@ LEICA_PRODUCT_FONT_BOLD = config.get("LEICA_PRODUCT_FONT_BOLD")
 # brillo < 1 o contraste > 1 = trazo más grueso/oscuro; brillo > 1 o
 # contraste < 1 = más fino/claro. Rango útil 0.6 a 1.4.
 # Se releen de config.json en cada impresión para poder ajustar sin reiniciar.
-def ql_tone():
-    """Devuelve (brillo, contraste) actuales de config.json."""
+def ql_tone(prefix="LEICA_QL"):
+    """Devuelve (brillo, contraste) actuales de config.json.
+    prefix: "LEICA_QL" (Brother) o "ZEBRA"."""
     cfg = load_config() if os.path.exists(CONFIG_PATH) else {}
     out = []
-    for key in ("LEICA_QL_BRIGHTNESS", "LEICA_QL_CONTRAST"):
+    for key in (f"{prefix}_BRIGHTNESS", f"{prefix}_CONTRAST"):
         v = cfg.get(key, 1.0)
         try:
             out.append(WS_label._check_tone(key, 1.0 if v in (None, "") else v))
         except ValueError as e:
             raise LabelError(f"config.json: {e}") from None
     return tuple(out)
+
+
+# Zebra ZD621 300 dpi para las etiquetas de producto (modos 7 y 8).
+# Si ZEBRA_PRINTER está vacío, el producto se sigue imprimiendo en la QL.
+#   "ZEBRA_PRINTER": "Zebra_Thread_Selcimat"   (cola CUPS, IP o /dev/usb/lp0)
+ZEBRA_PRINTER = config.get("ZEBRA_PRINTER", "")
+ZEBRA_DPMM = float(config.get("ZEBRA_DPMM", 12))          # 12 = 300 dpi
+ZEBRA_ROTATE = int(config.get("ZEBRA_ROTATE", 0))          # 0, 90, 180 o 270
+ZEBRA_THRESHOLD = int(config.get("ZEBRA_THRESHOLD", 128))
+
+
+def zebra_settings():
+    """Ajustes de la Zebra que se releen en cada impresión."""
+    cfg = load_config() if os.path.exists(CONFIG_PATH) else {}
+    brillo, contraste = ql_tone("ZEBRA")
+    return {"brightness": brillo, "contrast": contraste,
+            "darkness": cfg.get("ZEBRA_DARKNESS"), "speed": cfg.get("ZEBRA_SPEED")}
+
 
 # Modos que se imprimen en la Brother QL y su tipo de etiqueta
 QL_MODES = (6, 7, 8)            # 6 Leica packaging, 7 Leica producto, 8 WS producto
@@ -187,6 +212,7 @@ def _shift(key, default=(0.0, 0.0)):
         return tuple(default)
 LEICA_QL_SHIFT_MM = _shift("LEICA_QL_SHIFT_MM")
 LEICA_PRODUCT_QL_SHIFT_MM = _shift("LEICA_PRODUCT_QL_SHIFT_MM", LEICA_QL_SHIFT_MM)
+ZEBRA_SHIFT_MM = _shift("ZEBRA_SHIFT_MM")
 
 # Recorte de la imagen del conector. Por defecto es automático ("top_block":
 # quita el texto que la imagen trae debajo). En config.json se puede forzar
@@ -591,25 +617,28 @@ def Impr_WS_product_label(Variant, IMEI, Serial):
 # =========================================================================
 
 def _calibration_row(row, product):
-    """Fila para calibrar la posición en la QL desde la propia pantalla.
+    """Fila para calibrar la posición desde la propia pantalla: en la QL
+    (packaging, o producto si no hay Zebra) o en la Zebra (producto).
     Los valores se aplican al momento y se guardan en config.json."""
-    global LEICA_QL_SHIFT_MM, LEICA_PRODUCT_QL_SHIFT_MM
-    key = "LEICA_PRODUCT_QL_SHIFT_MM" if product else "LEICA_QL_SHIFT_MM"
-    cur = LEICA_PRODUCT_QL_SHIFT_MM if product else LEICA_QL_SHIFT_MM
+    if product and ZEBRA_PRINTER:
+        key, title, note = "ZEBRA_SHIFT_MM", "Calibración Zebra (mm):", ""
+    elif product:
+        key, title = "LEICA_PRODUCT_QL_SHIFT_MM", "Calibración QL (mm):"
+        note = "" if LEICA_QL_PRINTER else "(solo con impresión directa)"
+    else:
+        key, title = "LEICA_QL_SHIFT_MM", "Calibración QL (mm):"
+        note = "" if LEICA_QL_PRINTER else "(solo con impresión directa)"
+    cur = globals()[key]
     calib_right.set(f"{cur[0]:g}")
     calib_up.set(f"{cur[1]:g}")
 
     def apply():
-        global LEICA_QL_SHIFT_MM, LEICA_PRODUCT_QL_SHIFT_MM
         try:
             val = (float(calib_right.get().replace(",", ".")), float(calib_up.get().replace(",", ".")))
         except ValueError:
             messagebox.showwarning("Calibración", "Introduce números en mm (p. ej. 1.5 o -0.3).")
             return
-        if product:
-            LEICA_PRODUCT_QL_SHIFT_MM = val
-        else:
-            LEICA_QL_SHIFT_MM = val
+        globals()[key] = val
         try:
             save_config_key(key, list(val))
             logger.info(f"Calibración {key} = {list(val)} guardada en config.json")
@@ -620,14 +649,14 @@ def _calibration_row(row, product):
 
     f = tk.Frame(dynamic_container)
     f.grid(row=row, column=1, sticky="w", pady=(8, 2))
-    tk.Label(dynamic_container, text="Calibración QL (mm):").grid(row=row, column=0, sticky="w", pady=(8, 2))
+    tk.Label(dynamic_container, text=title).grid(row=row, column=0, sticky="w", pady=(8, 2))
     tk.Label(f, text="derecha").pack(side="left")
     tk.Entry(f, textvariable=calib_right, width=6).pack(side="left", padx=(4, 12))
     tk.Label(f, text="arriba").pack(side="left")
     tk.Entry(f, textvariable=calib_up, width=6).pack(side="left", padx=(4, 12))
     tk.Button(f, text="Aplicar y guardar", command=apply).pack(side="left")
-    if not LEICA_QL_PRINTER:
-        tk.Label(f, text="(solo con impresión directa)", fg="#888").pack(side="left", padx=8)
+    if note:
+        tk.Label(f, text=note, fg="#888").pack(side="left", padx=8)
 
 
 def switch_view():
@@ -884,6 +913,24 @@ def print_label():
         clear_vars = [manual_model, manual_pn, manual_sn, manual_batch, manual_expire,
                       filter_value, leica_sn, leica_imei, leica_prod_sn]
 
+        # Etiquetas de producto en la Zebra (ZPL raw)
+        if mode in QL_PRODUCT_MODES and ZEBRA_PRINTER:
+            zs = zebra_settings()
+            dx, dy = ZEBRA_SHIFT_MM
+            logger.debug(f"Impresión Zebra -> {ZEBRA_PRINTER} ({ZEBRA_DPMM:g} p/mm, giro {ZEBRA_ROTATE}°, "
+                         f"desplazamiento dcha {dx} mm / arriba {dy} mm, brillo {zs['brightness']:g} / "
+                         f"contraste {zs['contrast']:g}, darkness {zs['darkness']}, velocidad {zs['speed']})")
+            st = WS_label.print_zebra(path, ZEBRA_PRINTER, copies=n,
+                                      zpl_path=os.path.join(OUTPUT_DIR, "output_zebra.zpl"),
+                                      bitmap_path=os.path.join(OUTPUT_DIR, "output_zebra_bitmap.png"),
+                                      dpmm=ZEBRA_DPMM, rotate=ZEBRA_ROTATE, threshold=ZEBRA_THRESHOLD,
+                                      shift_right_mm=dx, shift_up_mm=dy, **zs)
+            logger.info(f"Enviadas {n} copia(s) a la Zebra por {st['via']}. ZPL: {st['zpl_path']}")
+            messagebox.showinfo("Impresión", f"Enviadas {n} etiqueta(s) a la Zebra correctamente.")
+            for v in clear_vars:
+                v.set("")
+            return
+
         if mode in QL_MODES:
             brillo, contraste = ql_tone()
             bitmap_path = os.path.join(OUTPUT_DIR, "output_ql_bitmap.png")
@@ -1001,7 +1048,8 @@ logger.addHandler(TkTextHandler(log_text))
 logger.info("Aplicación iniciada - WS Labelling Rev 4.1")
 for _w in CONFIG_WARNINGS:
     logger.warning(_w)
-logger.info(f"Calibración QL: packaging {list(LEICA_QL_SHIFT_MM)} / producto {list(LEICA_PRODUCT_QL_SHIFT_MM)} mm")
+logger.info(f"Calibración QL: packaging {list(LEICA_QL_SHIFT_MM)} / producto {list(LEICA_PRODUCT_QL_SHIFT_MM)} mm"
+            f" | Zebra {list(ZEBRA_SHIFT_MM)} mm")
 logger.info(f"Carpeta de trabajo: {OUTPUT_DIR}")
 if LEICA_QL_PRINTER:
     try:
@@ -1017,6 +1065,16 @@ try:
     logger.info(f"QL brillo {_b:g} / contraste {_c:g} (LEICA_QL_BRIGHTNESS / LEICA_QL_CONTRAST)")
 except LabelError as _e:
     logger.warning(str(_e))
+if ZEBRA_PRINTER:
+    try:
+        _z = zebra_settings()
+        logger.info(f"Etiquetas de producto -> Zebra '{ZEBRA_PRINTER}' (ZPL raw, {ZEBRA_DPMM:g} p/mm): "
+                    f"brillo {_z['brightness']:g} / contraste {_z['contrast']:g} / "
+                    f"darkness {_z['darkness']} / velocidad {_z['speed']}")
+    except LabelError as _e:
+        logger.warning(str(_e))
+else:
+    logger.info("Etiquetas de producto -> Brother QL (ZEBRA_PRINTER sin definir)")
 if RUBIK_FONT_PATH:
     logger.info(f"Fuente Rubik localizada en: {RUBIK_FONT_PATH}")
 else:

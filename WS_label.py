@@ -772,6 +772,10 @@ def normalize_ql_printer(printer):
     host = host.split("/")[0]                # quita rutas tipo /general/status.html
     if not host:
         raise ValueError(f"Dirección de impresora no válida: {printer!r}")
+    if "_" in host.split(":")[0]:
+        raise ValueError(f"'{printer}' parece el nombre de una cola CUPS, no la dirección de la QL. "
+                         "En LEICA_QL_PRINTER pon la IP de la Brother (p. ej. 192.168.1.74); "
+                         "las impresoras CUPS (como la Zebra) van en ZEBRA_PRINTER.")
     if ":" not in host:
         host += ":9100"
     return f"tcp://{host}", "network"
@@ -851,6 +855,106 @@ def print_brother_ql(src_path, printer, model="QL-820NWB", tape="50", copies=1,
     status["identifier"] = identifier
     status["length_mm"] = round((img.height + 2 * QL_FEED_MARGIN_DOTS) / DPMM, 1)
     return status
+
+
+# --- Impresión en Zebra (ZD621 300 dpi, ZPL) --------------------------------
+# La etiqueta se convierte en un gráfico ^GF a la resolución nativa de la
+# Zebra (12 puntos/mm) y se envía en ZPL "raw": sin el driver de CUPS, así no
+# se reescala ni se aplica el tamaño de papel de la cola (A4 por defecto).
+# La etiqueta se genera a 300 dpi (11,81 p/mm) y se reescala a 12 p/mm para
+# que mida exactamente lo mismo en mm.
+#   brillo / contraste: ajuste de imagen, como en la QL (grosor del trazo).
+#   darkness (^MD, -30..30): calor del cabezal, relativo al ajuste de la
+#             impresora. Es el "oscuro" real de una térmica: úsalo primero.
+#   speed (^PR, 2..6 ips en la ZD621 de 300 dpi): más lento = más negro.
+ZEBRA_DPMM = 12
+ZEBRA_MAX_WIDTH_DOTS = 1248          # 104 mm de cabezal en la ZD621 300 dpi
+
+
+def _shift_canvas(im, dx, dy):
+    """Desplaza el contenido dx (derecha) y dy (abajo) puntos sin cambiar el
+    tamaño. Error si al hacerlo se pierde algo impreso."""
+    if not dx and not dy:
+        return im
+    canvas = Image.new("L", im.size, 255)
+    canvas.paste(im, (dx, dy))
+    if canvas.histogram()[0] != im.histogram()[0]:
+        raise ValueError("Con ese desplazamiento parte de la etiqueta se sale del borde. "
+                         "Reduce la calibración (derecha/arriba).")
+    return canvas
+
+
+def make_zpl(src_path, copies=1, dpmm=ZEBRA_DPMM, rotate=0, threshold=128,
+             brightness=1.0, contrast=1.0, shift_right_mm=0.0, shift_up_mm=0.0,
+             darkness=None, speed=None, bitmap_path=None):
+    """Devuelve el ZPL (str) de la etiqueta en src_path."""
+    im = Image.open(src_path).convert("L")
+    if rotate:
+        im = im.rotate(rotate, expand=True)
+    if abs(dpmm - DPMM) > 0.01:              # 300 dpi -> resolución de la Zebra
+        im = im.resize((round(im.width * dpmm / DPMM), round(im.height * dpmm / DPMM)),
+                       Image.LANCZOS)
+    im = _binarize(im, threshold, brightness, contrast)
+    im = _shift_canvas(im, round(shift_right_mm * dpmm), round(-shift_up_mm * dpmm))
+    if im.width > ZEBRA_MAX_WIDTH_DOTS:
+        raise ValueError(f"La etiqueta mide {im.width / dpmm:.1f} mm de ancho y el cabezal "
+                         f"solo {ZEBRA_MAX_WIDTH_DOTS / dpmm:.0f} mm. Revisa ZEBRA_ROTATE.")
+    if bitmap_path:
+        im.convert("1").save(bitmap_path, dpi=(round(dpmm * 25.4), round(dpmm * 25.4)))
+
+    # ^GF: 1 = punto negro, filas completadas hasta múltiplo de 8 bits
+    bits = Image.eval(im, lambda v: 255 - v).convert("1")
+    row_bytes = (im.width + 7) // 8
+    data = bits.tobytes()
+    total = len(data)
+    rows = [data[i:i + row_bytes].hex().upper() for i in range(0, total, row_bytes)]
+
+    cmd = ["^XA", f"^PW{im.width}", f"^LL{im.height}", "^LH0,0", "^PON"]
+    if darkness not in (None, ""):
+        d = int(darkness)
+        if not -30 <= d <= 30:
+            raise ValueError(f"ZEBRA_DARKNESS = {d} fuera de rango (-30 a 30; 0 = sin cambio).")
+        cmd.append(f"^MD{d}")
+    if speed not in (None, ""):
+        sp = int(speed)
+        if not 2 <= sp <= 8:
+            raise ValueError(f"ZEBRA_SPEED = {sp} fuera de rango (2 a 8 pulgadas/s).")
+        cmd.append(f"^PR{sp}")
+    cmd.append(f"^FO0,0^GFA,{total},{total},{row_bytes},")
+    zpl = "\n".join(cmd) + "".join(rows) + f"^FS\n^PQ{max(1, int(copies))}\n^XZ\n"
+    return zpl
+
+
+def print_zebra(src_path, printer, copies=1, zpl_path=None, **kw):
+    """Imprime en una Zebra con ZPL raw.
+    printer: nombre de cola CUPS ('Zebra_Thread_Selcimat'), IP o tcp://IP
+             (puerto 9100), o un dispositivo ('/dev/usb/lp0').
+    kw: los de make_zpl. Devuelve dict con info del envío."""
+    zpl = make_zpl(src_path, copies=copies, **kw)
+    zpl_path = zpl_path or os.path.splitext(src_path)[0] + ".zpl"
+    with open(zpl_path, "w", encoding="ascii") as f:
+        f.write(zpl)
+
+    p = str(printer or "").strip()
+    if not p:
+        raise ValueError("No hay impresora Zebra configurada (ZEBRA_PRINTER en config.json).")
+    if p.startswith("/dev/"):
+        with open(p, "wb") as dev:
+            dev.write(zpl.encode("ascii"))
+        via = p
+    elif p.startswith("tcp://") or p.replace(".", "").replace(":", "").isdigit():
+        import socket
+        host = p[len("tcp://"):] if p.startswith("tcp://") else p
+        host, _, port = host.partition(":")
+        with socket.create_connection((host, int(port or 9100)), timeout=10) as sk:
+            sk.sendall(zpl.encode("ascii"))
+        via = f"tcp://{host}:{port or 9100}"
+    else:                                     # cola CUPS, en modo raw
+        r = subprocess.run(["lp", "-d", p, "-o", "raw", zpl_path], capture_output=True, text=True)
+        if r.returncode != 0:
+            raise RuntimeError(f"lp ha fallado en la cola '{p}': {(r.stderr or r.stdout).strip()}")
+        via = f"CUPS '{p}' (raw) {r.stdout.strip()}"
+    return {"via": via, "zpl_path": zpl_path, "copies": max(1, int(copies))}
 
 
 if __name__ == "__main__":

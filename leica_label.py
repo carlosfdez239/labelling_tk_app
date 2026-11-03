@@ -67,7 +67,7 @@ ASSETS = {
     "ukca":            (["ukca"],                                     ( 3.0, 22.0,  5.5,  5.0)),  # I1 (mín. 5 mm alto)
     "ce":              (["ce"],                                       (10.5, 22.0,  7.0,  5.0)),  # I2
 #    "china_rohs":      (["china_rohs", "rohs"],                       (22.0, 22.0,  5.5,  5.0)),  # I3
-#    "weee":            (["weee"],                                     (31.0, 21.0,  5.5,  7.0)),  # I4 (mín. 7 mm alto)
+    "weee":            (["weee"],                                     (31.0, 21.0,  5.5,  7.0)),  # I4 (mín. 7 mm alto)
     "recycling_block": (["recycling_block", "recycling_symbol",
                          "recycling"],                                (45.0, 29.5, 26.5, 17.0)),  # O  (26.5 x 17 mm)
 }
@@ -412,11 +412,59 @@ def _is_svg(path):
     return head.startswith(b"<?xml") or (head.startswith(b"<") and b"<svg" in head.lower())
 
 
-def _load_asset(path, box_w, box_h):
+def _trim_whitespace(img, tol=245):
+    """Quita el margen blanco/transparente alrededor del dibujo."""
+    bg = Image.new("RGBA", img.size, (255, 255, 255, 255))
+    flat = Image.alpha_composite(bg, img).convert("RGB")
+    r, g, b = flat.split()
+    darkest = ImageChops.darker(ImageChops.darker(r, g), b)
+    box = darkest.point(lambda v: 255 if v < tol else 0).getbbox()
+    return img.crop(box) if box else img
+
+
+def _top_block(img, tol=245):
+    """Se queda con la parte de arriba de la imagen: corta por la franja
+    horizontal en blanco más alta (p. ej. entre un dibujo y el texto que trae
+    debajo). Si no hay ninguna franja en blanco, la deja igual."""
+    bg = Image.new("RGBA", img.size, (255, 255, 255, 255))
+    flat = Image.alpha_composite(bg, img).convert("RGB")
+    r, g, b = flat.split()
+    ink = ImageChops.darker(ImageChops.darker(r, g), b).point(lambda v: 1 if v < tol else 0)
+    w, h = ink.size
+    data = ink.load()
+    rows = [any(data[x, y] for x in range(0, w, max(1, w // 400))) for y in range(h)]
+    best, start = (0, None), None
+    for y, has in enumerate(rows + [True]):
+        if not has and start is None:
+            start = y
+        elif has and start is not None:
+            if start > 0 and y < h and y - start > best[0]:   # solo huecos interiores
+                best = (y - start, start)
+            start = None
+    return img.crop((0, 0, w, best[1])) if best[1] else img
+
+
+def _load_asset(path, box_w, box_h, trim=False, crop=None):
+    """trim: quita el margen blanco de la imagen para que el dibujo llene su hueco.
+    crop: (izq, arriba, der, abajo) en fracción 0..1 de la imagen ya sin margen,
+    para quedarse solo con una parte (p. ej. quitar un texto que trae debajo),
+    o "top_block": se queda con lo que hay por encima del hueco en blanco más
+    grande (detecta solo dónde acaba el dibujo y empieza el texto)."""
     if _is_svg(path):
-        img = _load_svg(path, box_w, box_h)
+        k = 4 if (trim or crop) else 1           # más resolución si luego se recorta
+        img = _load_svg(path, box_w * k, box_h * k)
     else:
         img = Image.open(path).convert("RGBA")   # PNG/JPG/WebP, aunque se llame .svg
+    if trim:
+        img = _trim_whitespace(img)
+    if crop == "top_block":
+        img = _trim_whitespace(_top_block(_trim_whitespace(img)))
+    elif crop:
+        l, t, r, b = crop
+        W, H = img.size
+        img = img.crop((round(l * W), round(t * H), round(r * W), round(b * H)))
+        if trim:
+            img = _trim_whitespace(img)
     # Encajar en la caja manteniendo proporción (también amplía si es pequeña)
     k = min(box_w / img.width, box_h / img.height)
     if abs(k - 1) > 0.01:
@@ -510,12 +558,9 @@ def render_leica_label(pn, product_name, pcs, made_in, serial="", ean="",
     draw = ImageDraw.Draw(label)
 
     # A, B, C: P/N, código de barras y número
-    # _draw_text(label, fonts, 3.0, 4.7, "P/N:", size_pt=10)
-    # draw_code128(label, pn, 9.5, 2.2, 5.0, 22.5, warnings)
-    # _draw_text(label, fonts, 9.5, 10.3, pn, size_pt=10)
-    _draw_text(label, fonts, 3.0, 3.7, "P/N:", size_pt=10)
-    draw_code128(label, pn, 9.5, 1.5, 5.0, 21.2, warnings)
-    _draw_text(label, fonts, 9.5, 8.5, pn, size_pt=10)
+    _draw_text(label, fonts, 3.0, 4.7, "P/N:", size_pt=10)
+    draw_code128(label, pn, 9.5, 2.2, 5.0, 22.5, warnings)
+    _draw_text(label, fonts, 9.5, 10.3, pn, size_pt=10)
 
     # D, E: logo y dirección dentro de su recuadro
     draw.rectangle([mm(34), mm(1.8), mm(72), mm(13)], outline="black", width=3)
@@ -554,7 +599,7 @@ def render_leica_label(pn, product_name, pcs, made_in, serial="", ean="",
 
     # I1..I4: marcas regulatorias y O: bloque de reciclaje
     #for key in ("ukca", "ce", "china_rohs", "weee", "recycling_block"):
-    for key in ("ukca", "ce", "recycling_block"):
+    for key in ("ukca", "ce", "weee", "recycling_block"):   # China RoHS desactivada (sin imagen)
         _paste_asset(label, key, assets_dir, missing)
 
     # K, L: EAN (solo B2C)
@@ -568,10 +613,8 @@ def render_leica_label(pn, product_name, pcs, made_in, serial="", ean="",
     else:
         dc = date_code_ymmy(date)
         text, bc = f"{DATECODE_PREFIX} {dc}", dc
-    #_draw_text(label, fonts, 3.0, 39.6, text, size_pt=9, max_w_mm=41)
-    _draw_text(label, fonts, 3.0, 38.0, text, size_pt=9, max_w_mm=41)
-    #draw_code128(label, bc, 3.0, 41.4, 5.0, 39.0, warnings)
-    draw_code128(label, bc, 3.0, 39.5, 5.0, 37.5, warnings)
+    _draw_text(label, fonts, 3.0, 39.6, text, size_pt=10, max_w_mm=41)
+    draw_code128(label, bc, 3.0, 41.4, 5.0, 39.0, warnings)
 
     if missing:
         warnings.append("Faltan imágenes en " + assets_dir + ": " + ", ".join(missing))
@@ -604,15 +647,20 @@ def _crop_checked(im, box, what):
     lost = (im.histogram()[0] - kept.histogram()[0])
     if lost > 0:
         raise ValueError(f"Al ajustar {what} se perderían {lost} píxeles impresos. "
-                         "Revisa el giro, el rollo o LEICA_QL_TRIM_MM.")
+                         "Revisa el giro, el rollo, LEICA_QL_TRIM_MM o el desplazamiento horizontal.")
     return kept
 
 
 def make_ql_bitmap(src_path, tape="50", rotate=90, threshold=128, trim_mm=0.0,
-                   out_path=None, trim_dots=None):
+                   out_path=None, trim_dots=None, trim_ends=None, grow=False):
     """Prepara la etiqueta para la QL: girada, 1 bit, ajustada al ancho
     imprimible del rollo. trim_mm recorta blanco en cada extremo del largo
     (para compensar el margen de avance que añade la impresora).
+    trim_ends=(inicio, final) en puntos permite recortar distinto en cada
+    extremo (desplaza el contenido a lo largo); un valor negativo añade blanco.
+    grow=True: si en un extremo no hay tanto blanco como se pide recortar, se
+    recorta solo el blanco disponible (la tira sale algo más larga) en lugar
+    de dar error.
     Devuelve una imagen 'L' con solo 0/255."""
     if tape not in QL_TAPE_DOTS:
         raise ValueError(f"Rollo '{tape}' no soportado (usa: {', '.join(QL_TAPE_DOTS)}).")
@@ -622,9 +670,22 @@ def make_ql_bitmap(src_path, tape="50", rotate=90, threshold=128, trim_mm=0.0,
         im = im.rotate(rotate, expand=True)
     im = im.point(lambda v: 0 if v < threshold else 255)
 
-    t = trim_dots if trim_dots is not None else (mm(trim_mm) if trim_mm else 0)
-    if t:
-        im = _crop_checked(im, (0, t, im.width, im.height - t), "el largo")
+    if trim_ends is None:
+        t = trim_dots if trim_dots is not None else (mm(trim_mm) if trim_mm else 0)
+        trim_ends = (t, t)
+    t0, t1 = trim_ends
+    if grow:
+        ink_rows = Image.eval(im, lambda v: 255 - v).getbbox()
+        if ink_rows:
+            t0 = min(t0, ink_rows[1])
+            t1 = min(t1, im.height - ink_rows[3])
+    if t0 < 0 or t1 < 0:                     # añadir blanco donde haga falta
+        canvas = Image.new("L", (im.width, im.height + max(0, -t0) + max(0, -t1)), 255)
+        canvas.paste(im, (0, max(0, -t0)))
+        im = canvas
+        t0, t1 = max(0, t0), max(0, t1)
+    if t0 or t1:
+        im = _crop_checked(im, (0, t0, im.width, im.height - t1), "el largo")
 
     if im.width > dots:                      # recorte centrado del lado de 50 mm
         left = (im.width - dots) // 2
@@ -640,31 +701,67 @@ def make_ql_bitmap(src_path, tape="50", rotate=90, threshold=128, trim_mm=0.0,
 
 
 def print_brother_ql(src_path, printer, model="QL-820NWB", tape="50", copies=1,
-                     rotate=90, threshold=128, trim_mm=None):
+                     rotate=90, threshold=128, trim_mm=None,
+                     shift_right_mm=0.0, shift_up_mm=0.0):
     """Imprime directamente en la Brother sin pasar por CUPS.
     printer: 'tcp://192.168.1.50' (red), 'file:///dev/usb/lp0' (USB) o
              'usb://0x04f9:0x209d' (USB con pyusb).
+    shift_right_mm / shift_up_mm: calibración de la impresora, en mm y vistos
+    sobre la etiqueta ya impresa (positivo = mover a la derecha / hacia arriba).
+    - Hacia arriba/abajo (a lo ancho del rollo) se mueve la franja de impresión
+      sobre el cabezal: hay mucho recorrido y no recorta contenido.
+    - Izquierda/derecha (a lo largo del rollo): usa el blanco de los extremos;
+      si no llega, la tira sale algo más larga (status["length_mm"]).
     Necesita: pip install brother_ql"""
     try:
         from brother_ql.raster import BrotherQLRaster
         from brother_ql.conversion import convert
+        import brother_ql.conversion as qlconv
         from brother_ql.backends.helpers import send
     except ImportError:
         raise RuntimeError("Falta la librería brother_ql: pip install brother_ql")
 
-    # trim_mm=None -> automático: compensa el avance de la impresora (75 mm exactos)
+    # Con giro de 90°, el borde derecho de la etiqueta sale primero (inicio de
+    # la tira) y su borde superior queda al lado del margen derecho del cabezal.
+    # Con 270° es al revés.
+    sign = 1 if int(rotate) % 360 == 90 else -1
+
+    # A lo largo: recorte distinto en cada extremo (trim_mm=None -> automático,
+    # compensa el avance en blanco de la impresora)
+    base = QL_FEED_MARGIN_DOTS if trim_mm is None else mm(trim_mm)
+    d = sign * mm(shift_right_mm)
     img = make_ql_bitmap(src_path, tape=tape, rotate=rotate, threshold=threshold,
-                         trim_mm=trim_mm or 0,
-                         trim_dots=QL_FEED_MARGIN_DOTS if trim_mm is None else None)
+                         trim_ends=(base + d, base - d), grow=bool(d))
+
     qlr = BrotherQLRaster(model)
     qlr.exception_on_warning = True
-    # rotate=0 y ancho exacto del rollo: brother_ql no reescala nada
-    instructions = convert(qlr=qlr, images=[img] * max(1, int(copies)), label=tape,
-                           rotate=0, threshold=50.0, dither=False, compress=True,
-                           red=(tape == "62red"), dpi_600=False, hq=True, cut=True)
+
+    # A lo ancho: se cambia el margen derecho que usa brother_ql al colocar
+    # la imagen en el cabezal (720 puntos).
+    extra = sign * mm(shift_up_mm)
+    spec_margin = qlconv.label_type_specs[tape]["right_margin_dots"]
+    room_left = qlr.get_pixel_width() - img.width - spec_margin
+    if not (-spec_margin <= extra <= room_left):
+        lim_a = spec_margin / DPMM
+        lim_b = room_left / DPMM
+        raise ValueError(f"Desplazamiento vertical de {shift_up_mm} mm fuera de rango para el "
+                         f"rollo de {tape} mm (máx. {lim_a if sign < 0 else lim_b:.1f} mm hacia arriba, "
+                         f"{lim_b if sign < 0 else lim_a:.1f} mm hacia abajo).")
+    model_key = model
+    old = qlconv.right_margin_addition.get(model_key, 0)
+    qlconv.right_margin_addition[model_key] = old + extra
+    try:
+        # rotate=0 y ancho exacto del rollo: brother_ql no reescala nada
+        instructions = convert(qlr=qlr, images=[img] * max(1, int(copies)), label=tape,
+                               rotate=0, threshold=50.0, dither=False, compress=True,
+                               red=(tape == "62red"), dpi_600=False, hq=True, cut=True)
+    finally:
+        qlconv.right_margin_addition[model_key] = old
     status = send(instructions=instructions, printer_identifier=printer, blocking=True)
     if status.get("outcome") == "error":
         raise RuntimeError(f"La impresora ha devuelto un error: {status.get('printer_state')}")
+    status = dict(status or {})
+    status["length_mm"] = round((img.height + 2 * QL_FEED_MARGIN_DOTS) / DPMM, 1)
     return status
 
 
