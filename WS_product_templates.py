@@ -13,14 +13,15 @@ izquierda; los tamaños de letra en puntos (pt).
 Campos variables (se sustituyen en los textos entre llaves):
     {imei}    IMEI (15 dígitos, se valida el dígito de control)
     {serial}  nº de serie (también va en el QR)
-Campos fijos de cada variante ("fixed"): {product}, {model}, {article},
-{anatel}. Si un texto usa un campo que no está en "fixed", la app avisa con
+Campos fijos de cada variante ("fixed"): {product}, {commercial},
+{article}, {anatel}. Si un texto usa un campo que no está en "fixed", la app avisa con
 un error claro en lugar de fallar.
 
 Tipos de elemento:
     asset      imagen encajada en 'box' (x, y, ancho, alto).
                Se le quita el margen blanco para que llene el hueco
-               ("trim": False lo desactiva). "crop": (izq, arriba, der, abajo)
+               ("trim": False lo desactiva; "trim": "ink" recorta por la tinta
+               que se imprime, ignorando fondos o marcos gris claro). "crop": (izq, arriba, der, abajo)
                en fracciones 0..1 para quedarse con una parte de la imagen,
                o "top_block" para quedarse con el dibujo de arriba y quitar
                el texto que venga debajo separado por un hueco en blanco.
@@ -30,6 +31,7 @@ Tipos de elemento:
     paragraph  texto que se reparte en líneas dentro de 'box'; si no cabe,
                reduce el tamaño
     rbox       recuadro con esquinas redondeadas
+    hline      línea horizontal desde (x, y) de ancho 'w' y grosor 'line' (mm)
     qr         código QR con 'data' en un cuadrado de lado 'size'
     dc_symbol  símbolo de corriente continua (IEC 60417-5031); con 'after'
                se coloca detrás de ese texto, a 'gap' mm
@@ -44,117 +46,114 @@ images/ws/, images/leica/ e images/.
 
 LABEL_W_MM, LABEL_H_MM = 63, 50
 
-PRODUCT_NAME = "ComBox70"
+# Rev. 13/11/2026: maquetación según el documento de diseño WS
+# "FusionX4 EU (FX4-EU & FX4-ROW)". Medidas tomadas del documento:
+#   - cabecera: logo WS a la izquierda y 5 líneas de datos a la derecha
+#     (sin la línea separadora del documento, eliminada a petición)
+#   - conector centrado con "Input Power, 10A / 13-26 VDC" y QR (7,6 mm, como Leica)
+#   - ROW: declaración FCC parte 15 (sin las líneas "CONTAINS FCC/IC ID")
+#   - recuadro inferior con los logos de cumplimiento
+# Cambios respecto al documento: IP67 eliminado (solo IP66), y en ROW se
+# mantiene el logo FCC.
 
-# --- Bloques comunes a las dos variantes -------------------------------------
-# (se copian en cada template; si un día cambian para una sola variante,
-#  basta con editar esa copia)
+HEADER_X = 60.6          # borde derecho del bloque de datos
+HEADER_PT = 4.9
+HEADER_Y0, HEADER_LEAD = 2.85, 2.19
+
 
 def _header():
-    return [
-        {"type": "asset", "name": "ws_logo_black", "box": (3.3, 2.8, 16.0, 10.2), "align": "l"},
-        # Bloque de datos arriba a la derecha (alineado a la derecha)
-        {"type": "text", "x": 58.1, "y": 6.2, "anchor": "r", "size": 4.7,
-         "runs": [("bold", "Product"), ("regular", ": {product}")]},
-        {"type": "text", "x": 58.1, "y": 8.15, "anchor": "r", "size": 4.7,
-         "runs": [("bold", "Model"), ("regular", ": {model}")]},
-        {"type": "text", "x": 58.1, "y": 10.1, "anchor": "r", "size": 4.7,
-         "runs": [("bold", "Article No: "), ("regular", "{article}")]},
-        {"type": "text", "x": 58.1, "y": 12.05, "anchor": "r", "size": 4.7,
-         "runs": [("bold", "IMEI: "), ("regular", "{imei}")]},
-        {"type": "text", "x": 58.1, "y": 14.0, "anchor": "r", "size": 4.7,
-         "runs": [("bold", "Serial No"), ("regular", ": {serial}")]},
-        # Fabricante
-        {"type": "lines", "x": 3.3, "y": 16.3, "lead": 1.95, "size": 4.7, "style": "regular",
-         "lines": ["Manufacturer: Worldsensing SL", "www.worldsensing.com", "Made in Spain"]},
+    rows = [
+        [("bold", "Product"), ("regular", ": {product}")],
+        [("bold", "Commercial Part No"), ("regular", ": {commercial}")],
+        [("bold", "Article No"), ("regular", ": {article}")],
+        [("bold", "IMEI"), ("regular", ": {imei}")],
+        [("bold", "Serial No"), ("regular", ": {serial}")],
     ]
+    els = [{"type": "asset", "name": "ws_logo_black", "box": (1.7, 5.5, 24.7, 5.1), "align": "l"}]
+    for i, runs in enumerate(rows):
+        els.append({"type": "text", "x": HEADER_X, "y": HEADER_Y0 + i * HEADER_LEAD,
+                    "anchor": "r", "size": HEADER_PT, "runs": runs})
+    # Línea separadora bajo la cabecera: eliminada (13/11/2026). Para
+    # recuperarla, descomentar:
+    # els.append({"type": "hline", "x": 1.0, "y": 16.05, "w": 60.5, "line": 0.4})
+    return els
 
 
 def _power():
     return [
-        # Conector y alimentación
         # Conector: la imagen trae debajo su propio texto ("Input Power...");
-        # "top_block" se queda solo con el dibujo (corta por el hueco en blanco
-        # más grande). Con una imagen que sea solo el conector, no hace nada.
-        {"type": "asset", "name": "combox70_connector", "box": (26.8, 15.6, 12.0, 12.4),
+        # "top_block" se queda solo con el dibujo.
+        {"type": "asset", "name": "combox70_connector", "box": (28.0, 16.8, 10.7, 10.6),
          "align": "c", "crop": "top_block"},
-        {"type": "text", "x": 26.6, "y": 29.2, "anchor": "l", "size": 4.7,
+        {"type": "text", "x": 33.15, "y": 28.95, "anchor": "m", "size": 4.7,
          "runs": [("regular", "Input Power, 10A")]},
-        {"type": "text", "x": 26.6, "y": 31.4, "anchor": "l", "size": 4.7,
+        {"type": "text", "x": 27.1, "y": 31.35, "anchor": "l", "size": 4.7,
          "runs": [("regular", "13-26 VDC")]},
-        # Símbolo de continua justo detrás de "13-26 VDC" (se calcula su posición)
-        {"type": "dc_symbol", "after": ("regular", "13-26 VDC", 4.7), "x": 26.6,
-         "gap": 0.8, "y": 31.4, "w": 3.2},
+        {"type": "dc_symbol", "after": ("regular", "13-26 VDC", 4.7), "x": 27.1,
+         "gap": 0.8, "y": 31.35, "w": 3.2},
         # QR con el nº de serie
-        {"type": "qr", "data": "{serial}", "x": 49.0, "y": 19.9, "size": 7.6},
+        # Mismo tamaño que en Leica (7,6 mm), centrado donde estaba el del
+        # documento WS (13/11/2026)
+        {"type": "qr", "data": "{serial}", "x": 49.2, "y": 20.9, "size": 7.6},
     ]
 
 
-def _ip_rating(x):
-    return [
-        {"type": "text", "x": x, "y": 42.9, "anchor": "l", "size": 9.8,
-         "runs": [("bold", "IP66")]},
-        {"type": "text", "x": x, "y": 45.9, "anchor": "l", "size": 9.8,
-         "runs": [("bold", "IP67")]},
-    ]
+def _ip66(x):
+    # Solo IP66: IP67 anulado en todas las variantes (13/11/2026).
+    return [{"type": "text", "x": x, "y": 45.0, "anchor": "l", "size": 9.8,
+             "runs": [("bold", "IP66")]}]
 
 
-# --- EU: WS ComBox70 FX4-EU (Article 1030653) -----------------------------
+def _bottom_box():
+    return [{"type": "rbox", "box": (1.8, 41.2, 59.9, 7.6), "radius": 1.0, "line": 0.4}]
+
+
+# --- EU: WS FX4-EU -----------------------------------------------------------
 TEMPLATE_EU = {
     "name": "EU",
-    "description": "ComBox70 FX4-EU (1030653)",
-    "offset": (0.0, -0.4),     # centrado en el rollo de 50 mm
-    "fixed": {"product": PRODUCT_NAME, "model": "FX4-EU", "article": "1030653"},
-    "elements": _header() + _power() + [
-        {"type": "rbox", "box": (3.3, 40.5, 56.5, 7.4), "radius": 1.0, "line": 0.3},
-        {"type": "asset", "name": "ce", "box": (4.3, 41.9, 6.2, 4.6), "align": "c"},
-    ] + _ip_rating(12.0) + [
-        {"type": "asset", "name": "ukca", "box": (21.6, 41.8, 4.9, 4.8), "align": "c"},
-        {"type": "lines", "x": 27.0, "y": 42.85, "lead": 1.85, "size": 4.2, "style": "regular",
-         "max_w": 23.4,
-         "lines": ["Importer: Leica Geosystems Ltd.",
-                   "Hexagon House, Michigan Drive,",
-                   "Tongwell, Milton Keynes, MK15 8HT"]},
-        {"type": "asset", "name": "weee", "box": (50.6, 40.8, 4.6, 6.9), "align": "c"},
-        {"type": "asset", "name": "manual_info", "box": (55.4, 42.2, 4.2, 3.9), "align": "c"},
+    "description": "FusionX4 FX4-EU",
+    "offset": (0.0, 0.0),
+    # Valores tal como aparecen en el documento de diseño
+    "fixed": {"product": "FX4-EU", "commercial": "FX4-EU", "article": "FX4-EU"},
+    "elements": _header() + _power() + _bottom_box() + [
+        {"type": "asset", "name": "ce", "box": (2.2, 43.1, 6.5, 4.6), "align": "c"},
+        {"type": "asset", "name": "ukca", "box": (9.9, 42.8, 4.7, 4.7), "align": "c"},
+    ] + _ip66(16.6) + [
+        {"type": "asset", "name": "weee", "box": (47.6, 42.1, 4.5, 6.2), "align": "c"},
+        # Icono del manual: misma caja que en Leica (4,9 x 5,0 mm), centrado
+        # en el recuadro inferior (13/11/2026)
+        {"type": "asset", "name": "manual_info", "box": (55.1, 42.5, 4.9, 5.0), "align": "c", "trim": "ink"},
     ],
 }
 
 
-# --- ROW: WS ComBox70 FX4-ROW (Article 1030654) ---------------------------
+# --- ROW: WS FX4-ROW ---------------------------------------------------------
 TEMPLATE_ROW = {
     "name": "ROW",
-    "description": "ComBox70 FX4-ROW (1030654)",
-    "offset": (0.0, -0.4),     # centrado en el rollo de 50 mm
-    # Nº de homologación ANATEL (Brasil). En el template aún es un marcador.
-    "fixed": {"product": PRODUCT_NAME, "model": "FX4-ROW", "article": "1030654",
+    "description": "FusionX4 FX4-ROW",
+    "offset": (0.0, 0.0),
+    # Nº de homologación ANATEL (Brasil). En el documento aún es un marcador.
+    "fixed": {"product": "FX4-ROW", "commercial": "FX4-ROW", "article": "FX4-ROW",
               "anatel": "AAAAA-BB-CCCCC"},
     "elements": _header() + _power() + [
-        # Identificadores FCC / IC de los módulos de radio
-        {"type": "lines", "x": 3.3, "y": 23.6, "lead": 1.52, "size": 3.6, "style": "regular",
-         "max_w": 22.8,
-         "lines": ["CONTAINS FCC ID XMR201903EG25G",
-                   "CONTAINS IC ID: 10224A-201903EG25G",
-                   "CONTAINS FCC ID 2AF6B-RAK5146",
-                   "CONTAINS IC ID: 25908-RAK5146",
-                   "CONTAINS FCC ID TLZ-CM358SM",
-                   "CONTAINS IC ID: 6100A-CM358SM"]},
         # Declaración FCC parte 15
-        {"type": "paragraph", "box": (3.7, 33.7, 55.4, 6.9), "size": 4.2, "style": "regular",
+        {"type": "paragraph", "box": (3.0, 33.0, 57.6, 7.8), "size": 4.2, "style": "regular",
          "lead": 1.75,
          "text": ("This device complies with part 15 of the FCC Rules. Operation is subject "
                   "to the following two conditions: (1) This device may not cause harmful "
                   "interference, and (2) this device must accept any interference received, "
                   "including interference that may cause undesired operation.")},
-        {"type": "rbox", "box": (3.3, 40.8, 56.5, 7.1), "radius": 1.0, "line": 0.3},
-        {"type": "asset", "name": "fcc", "box": (3.8, 41.4, 6.6, 4.4), "align": "c"},
-        {"type": "asset", "name": "anatel", "box": (10.8, 41.4, 6.6, 4.4), "align": "c"},
-        {"type": "text", "x": 14.1, "y": 46.8, "anchor": "m", "size": 3.6,
+    ] + _bottom_box() + [
+        # Logo FCC: se mantiene porque ROW no lleva las líneas "CONTAINS FCC ID"
+        {"type": "asset", "name": "fcc", "box": (2.8, 41.8, 6.3, 5.8), "align": "c"},
+        {"type": "asset", "name": "anatel", "box": (10.6, 41.6, 6.0, 5.0), "align": "c"},
+        {"type": "text", "x": 13.6, "y": 47.7, "anchor": "m", "size": 3.6,
          "runs": [("regular", "{anatel}")]},
-        {"type": "asset", "name": "rcm", "box": (23.6, 41.5, 7.2, 5.9), "align": "c"},
-    ] + _ip_rating(32.1) + [
-        {"type": "asset", "name": "weee", "box": (40.1, 41.0, 4.6, 6.7), "align": "c"},
-        {"type": "asset", "name": "manual_info", "box": (48.8, 42.2, 4.6, 3.9), "align": "c"},
+        {"type": "asset", "name": "rcm", "box": (23.9, 42.4, 7.5, 5.6), "align": "c"},
+    ] + _ip66(33.0) + [
+        {"type": "asset", "name": "weee", "box": (41.7, 41.6, 4.4, 6.3), "align": "c"},
+        # Icono del manual: misma caja que en Leica (4,9 x 5,0 mm) (13/11/2026)
+        {"type": "asset", "name": "manual_info", "box": (51.6, 42.5, 4.9, 5.0), "align": "c", "trim": "ink"},
     ],
 }
 

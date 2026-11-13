@@ -868,7 +868,7 @@ def print_brother_ql(src_path, printer, model="QL-820NWB", tape="50", copies=1,
 #             impresora. Es el "oscuro" real de una térmica: úsalo primero.
 #   speed (^PR, 2..6 ips en la ZD621 de 300 dpi): más lento = más negro.
 ZEBRA_DPMM = 12
-ZEBRA_MAX_WIDTH_DOTS = 1248          # 104 mm de cabezal en la ZD621 300 dpi
+ZEBRA_MAX_WIDTH_MM = 104              # ancho de cabezal de la ZD621 (203 y 300 dpi)
 
 
 def _shift_canvas(im, dx, dy):
@@ -886,19 +886,26 @@ def _shift_canvas(im, dx, dy):
 
 def make_zpl(src_path, copies=1, dpmm=ZEBRA_DPMM, rotate=0, threshold=128,
              brightness=1.0, contrast=1.0, shift_right_mm=0.0, shift_up_mm=0.0,
-             darkness=None, speed=None, bitmap_path=None):
-    """Devuelve el ZPL (str) de la etiqueta en src_path."""
-    im = Image.open(src_path).convert("L")
+             darkness=None, speed=None, bitmap_path=None, src_dpmm=None):
+    """Devuelve el ZPL (str) de la etiqueta en src_path.
+    src_dpmm: resolución con la que se dibujó la imagen (puntos/mm). Si no se
+    indica, se lee del PNG; si el PNG no la trae, se supone 300 dpi. Si
+    coincide con la de la Zebra, la imagen va tal cual, sin reescalar."""
+    src = Image.open(src_path)
+    if src_dpmm is None:
+        info_dpi = src.info.get("dpi")
+        src_dpmm = float(info_dpi[0]) / 25.4 if info_dpi and info_dpi[0] else DPMM
+    im = src.convert("L")
     if rotate:
         im = im.rotate(rotate, expand=True)
-    if abs(dpmm - DPMM) > 0.01:              # 300 dpi -> resolución de la Zebra
-        im = im.resize((round(im.width * dpmm / DPMM), round(im.height * dpmm / DPMM)),
+    if abs(dpmm - src_dpmm) > 0.05:          # reescalado solo si no coincide
+        im = im.resize((round(im.width * dpmm / src_dpmm), round(im.height * dpmm / src_dpmm)),
                        Image.LANCZOS)
     im = _binarize(im, threshold, brightness, contrast)
     im = _shift_canvas(im, round(shift_right_mm * dpmm), round(-shift_up_mm * dpmm))
-    if im.width > ZEBRA_MAX_WIDTH_DOTS:
+    if im.width > round(ZEBRA_MAX_WIDTH_MM * dpmm):
         raise ValueError(f"La etiqueta mide {im.width / dpmm:.1f} mm de ancho y el cabezal "
-                         f"solo {ZEBRA_MAX_WIDTH_DOTS / dpmm:.0f} mm. Revisa ZEBRA_ROTATE.")
+                         f"solo {ZEBRA_MAX_WIDTH_MM} mm. Revisa ZEBRA_ROTATE.")
     if bitmap_path:
         im.convert("1").save(bitmap_path, dpi=(round(dpmm * 25.4), round(dpmm * 25.4)))
 
@@ -923,6 +930,26 @@ def make_zpl(src_path, copies=1, dpmm=ZEBRA_DPMM, rotate=0, threshold=128,
     cmd.append(f"^FO0,0^GFA,{total},{total},{row_bytes},")
     zpl = "\n".join(cmd) + "".join(rows) + f"^FS\n^PQ{max(1, int(copies))}\n^XZ\n"
     return zpl
+
+
+# Colas CUPS que NO respetan '-o raw': convierten el ZPL a texto y la Zebra
+# imprime los caracteres (filas de "0" durante muchas etiquetas).
+_NON_RAW_URI_PREFIXES = ("ipp://", "ipps://", "implicitclass://", "dnssd://", "ippusb://")
+
+
+def _check_raw_queue(queue):
+    """Comprueba que la cola CUPS deja pasar el ZPL tal cual. Lanza un error
+    claro si es una cola driverless (IPP Everywhere / implicitclass)."""
+    try:
+        r = subprocess.run(["lpstat", "-v", queue], capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        return                                # sin lpstat: se intenta igualmente
+    uri = r.stdout.strip().split(":", 1)[-1].strip() if r.returncode == 0 else ""
+    if uri.lower().startswith(_NON_RAW_URI_PREFIXES):
+        raise RuntimeError(
+            f"La cola CUPS '{queue}' ({uri}) no admite ZPL en raw: la Zebra imprimiría el "
+            f"código como texto. Pon la IP de la Zebra en ZEBRA_PRINTER (config.json) o "
+            f"recrea la cola con: sudo lpadmin -p {queue} -E -v socket://IP:9100 -m raw")
 
 
 def print_zebra(src_path, printer, copies=1, zpl_path=None, **kw):
@@ -950,6 +977,7 @@ def print_zebra(src_path, printer, copies=1, zpl_path=None, **kw):
             sk.sendall(zpl.encode("ascii"))
         via = f"tcp://{host}:{port or 9100}"
     else:                                     # cola CUPS, en modo raw
+        _check_raw_queue(p)
         r = subprocess.run(["lp", "-d", p, "-o", "raw", zpl_path], capture_output=True, text=True)
         if r.returncode != 0:
             raise RuntimeError(f"lp ha fallado en la cola '{p}': {(r.stderr or r.stdout).strip()}")

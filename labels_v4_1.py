@@ -75,6 +75,27 @@ Rev 4.1 --> 10/10/2026
   El ZPL enviado se guarda en output_zebra.zpl y su bitmap en output_zebra_bitmap.png.
 - LEICA_QL_PRINTER con un nombre de cola CUPS da un error claro.
 
+Rev 4.1.1 --> 13/11/2026
+- Resolución de la Zebra configurable en config.json con ZEBRA_DPI
+  (203, 300 o 600). Se convierte a la densidad ZPL (8, 12 o 24 p/mm) y se
+  relee en cada impresión, igual que darkness o velocidad.
+- ZEBRA_DPMM sigue funcionando como antes si ZEBRA_DPI no está definido.
+  Si están los dos, manda ZEBRA_DPI.
+- La resolución usada se muestra en el registro al arrancar y en cada impresión.
+- Elementos ocultables en las etiquetas de producto (Leica y WS, EU y ROW)
+  con PRODUCT_HIDE_ELEMENTS en config.json, p. ej. ["ip67"]. Se quita todo
+  elemento del template cuyo nombre, texto o imagen contenga ese término
+  (sin distinguir mayúsculas). Los elementos quitados se listan en el registro
+  al arrancar; si un término no coincide con nada, se avisa.
+- Fix: PRODUCT_HIDE_ELEMENTS no encontraba los textos de tipo 'text' (están
+  dentro de 'runs', en tuplas). Ahora busca en toda la estructura del elemento.
+- IP67 eliminado de todas las etiquetas de producto (Leica y WS, EU y ROW)
+  directamente en los templates; IP66 queda centrado en el recuadro.
+- Etiquetas de producto en Zebra: se dibujan directamente a la resolución de
+  la impresora (ZEBRA_DPI) en vez de a 300 dpi y reescalar. A 203 dpi el texto
+  pequeño, el QR y los logos salen nítidos. La vista previa muestra
+  exactamente el bitmap que se imprime.
+
 '''
 
 import tkinter as tk
@@ -103,6 +124,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
 # Avisos de configuración: se vuelcan al registro cuando ya existe el logger
 CONFIG_WARNINGS = []
+# Mensajes informativos de configuración (se vuelcan al registro al arrancar)
+CONFIG_INFO = []
 
 def load_config(file_path=CONFIG_PATH):
     if not os.path.exists(file_path):
@@ -183,7 +206,41 @@ def ql_tone(prefix="LEICA_QL"):
 # Si ZEBRA_PRINTER está vacío, el producto se sigue imprimiendo en la QL.
 #   "ZEBRA_PRINTER": "Zebra_Thread_Selcimat"   (cola CUPS, IP o /dev/usb/lp0)
 ZEBRA_PRINTER = config.get("ZEBRA_PRINTER", "")
-ZEBRA_DPMM = float(config.get("ZEBRA_DPMM", 12))          # 12 = 300 dpi
+# Resolución: "ZEBRA_DPI": 203, 300 o 600 (ZD621 = 300). Por compatibilidad
+# se acepta también "ZEBRA_DPMM" (8, 12 o 24) si ZEBRA_DPI no está definido.
+ZEBRA_DPI_TO_DPMM = {203: 8, 300: 12, 600: 24}
+ZEBRA_DEFAULT_DPI = 300
+
+
+def zebra_resolution(cfg=None):
+    """Devuelve (dpi, dpmm) de la Zebra según config.json.
+    Lanza LabelError si el valor no es una resolución válida."""
+    if cfg is None:
+        cfg = load_config() if os.path.exists(CONFIG_PATH) else {}
+    dpi_raw = cfg.get("ZEBRA_DPI")
+    dpmm_raw = cfg.get("ZEBRA_DPMM")
+    if dpi_raw not in (None, ""):
+        try:
+            dpi = int(float(dpi_raw))
+        except (TypeError, ValueError):
+            dpi = None
+        if dpi not in ZEBRA_DPI_TO_DPMM:
+            raise LabelError(f"config.json: ZEBRA_DPI no válido ({dpi_raw!r}). "
+                             f"Valores admitidos: {sorted(ZEBRA_DPI_TO_DPMM)}")
+        return dpi, ZEBRA_DPI_TO_DPMM[dpi]
+    if dpmm_raw not in (None, ""):
+        dpmm_to_dpi = {v: k for k, v in ZEBRA_DPI_TO_DPMM.items()}
+        try:
+            dpmm = int(float(dpmm_raw))
+        except (TypeError, ValueError):
+            dpmm = None
+        if dpmm not in dpmm_to_dpi:
+            raise LabelError(f"config.json: ZEBRA_DPMM no válido ({dpmm_raw!r}). "
+                             f"Valores admitidos: {sorted(dpmm_to_dpi)}")
+        return dpmm_to_dpi[dpmm], dpmm
+    return ZEBRA_DEFAULT_DPI, ZEBRA_DPI_TO_DPMM[ZEBRA_DEFAULT_DPI]
+
+
 ZEBRA_ROTATE = int(config.get("ZEBRA_ROTATE", 0))          # 0, 90, 180 o 270
 ZEBRA_THRESHOLD = int(config.get("ZEBRA_THRESHOLD", 128))
 
@@ -230,6 +287,52 @@ if _crop not in (None, ""):
                     _el["crop"] = _crop
     except (TypeError, ValueError):
         CONFIG_WARNINGS.append(f"LEICA_CONNECTOR_CROP no válido ({_crop!r}); se usa el recorte automático")
+
+# Elementos a ocultar en TODAS las etiquetas de producto (Leica y WS, EU y
+# ROW). En config.json: "PRODUCT_HIDE_ELEMENTS": ["ip67"]. Se quita cada
+# elemento cuyo nombre o cualquier valor de texto (texto, ruta de imagen...)
+# contenga el término, sin distinguir mayúsculas. Lista vacía = no se oculta nada.
+def _element_matches(el, term):
+    """True si el término aparece en cualquier texto del elemento, a cualquier
+    profundidad (nombre, 'runs' [(estilo, texto)], 'lines', rutas...)."""
+    if isinstance(el, str):
+        return term in el.lower()
+    if isinstance(el, dict):
+        return any(_element_matches(v, term) for v in el.values())
+    if isinstance(el, (list, tuple)):
+        return any(_element_matches(v, term) for v in el)
+    return False
+
+
+def _hide_product_elements(terms):
+    if isinstance(terms, str):
+        terms = [terms]
+    if not isinstance(terms, (list, tuple)):
+        CONFIG_WARNINGS.append(f"PRODUCT_HIDE_ELEMENTS no válido ({terms!r}); debe ser una lista de textos")
+        return
+    terms = [str(t).strip().lower() for t in terms if str(t).strip()]
+    if not terms:
+        return
+    found = {t: 0 for t in terms}
+    for marca, templates in (("Leica", leica_product.TEMPLATES), ("WS", ws_product.TEMPLATES)):
+        for variante, tpl in templates.items():
+            kept, removed = [], []
+            for el in tpl["elements"]:
+                hit = next((t for t in terms if _element_matches(el, t)), None)
+                if hit:
+                    found[hit] += 1
+                    removed.append(el.get("name", "<sin nombre>"))
+                else:
+                    kept.append(el)
+            tpl["elements"][:] = kept
+            if removed:
+                CONFIG_INFO.append(f"Producto {marca} {variante}: ocultos {removed} (PRODUCT_HIDE_ELEMENTS)")
+    for t, n in found.items():
+        if n == 0:
+            CONFIG_WARNINGS.append(f"PRODUCT_HIDE_ELEMENTS: '{t}' no coincide con ningún elemento de los templates")
+
+
+_hide_product_elements(config.get("PRODUCT_HIDE_ELEMENTS", []))
 # Tamaños del texto pequeño de la etiqueta Leica (pt). Si no se definen, se
 # usan los del plano (5 / 4 / 5). Si no caben, se reducen solos y se avisa.
 for _key, _attr in (("LEICA_ADDRESS_PT", "ADDRESS_PT"),
@@ -582,14 +685,21 @@ def Impr_Leica_label(PN, Product_Name, Pcs, Made_In, Serial, EAN):
     return path, warnings
 
 
-def Impr_Leica_product_label(Variant, IMEI, Serial):
+def _product_dpmm():
+    """Resolución de render de las etiquetas de producto: la de la Zebra si
+    se imprimen en ella; None (300 dpi de la QL) si van a la Brother."""
+    return zebra_resolution()[1] if ZEBRA_PRINTER else None
+
+
+def Impr_Leica_product_label(Variant, IMEI, Serial, dpmm=None):
     """Etiqueta de producto Leica ComBox70 63x50 mm (template EU o ROW).
-    Devuelve (ruta, avisos)."""
+    dpmm: resolución del render (None = 300 dpi). Devuelve (ruta, avisos)."""
     output_path = os.path.join(OUTPUT_DIR, "output_leica_producto.png")
     try:
         path, warnings = leica_product.render_product_label(
             Variant, IMEI, Serial, assets_dir=LEICA_ASSETS_DIR, out_path=output_path,
-            font_regular=LEICA_PRODUCT_FONT_REGULAR, font_bold=LEICA_PRODUCT_FONT_BOLD)
+            font_regular=LEICA_PRODUCT_FONT_REGULAR, font_bold=LEICA_PRODUCT_FONT_BOLD,
+            dpmm=dpmm)
     except ValueError as e:
         raise LabelError(str(e)) from e
     for w in warnings:
@@ -597,14 +707,15 @@ def Impr_Leica_product_label(Variant, IMEI, Serial):
     logger.info(f"Etiqueta producto Leica {Variant} generada correctamente -> {path}")
     return path, warnings
 
-def Impr_WS_product_label(Variant, IMEI, Serial):
+def Impr_WS_product_label(Variant, IMEI, Serial, dpmm=None):
     """Etiqueta de producto WS ComBox70 63x50 mm (template EU o ROW).
-    Devuelve (ruta, avisos)."""
+    dpmm: resolución del render (None = 300 dpi). Devuelve (ruta, avisos)."""
     output_path = os.path.join(OUTPUT_DIR, "output_ws_producto.png")
     try:
         path, warnings = ws_product.render_product_label(
             Variant, IMEI, Serial, assets_dir=WS_PRODUCT_ASSETS_DIR, out_path=output_path,
-            font_regular=LEICA_PRODUCT_FONT_REGULAR, font_bold=LEICA_PRODUCT_FONT_BOLD)
+            font_regular=LEICA_PRODUCT_FONT_REGULAR, font_bold=LEICA_PRODUCT_FONT_BOLD,
+            dpmm=dpmm)
     except ValueError as e:
         raise LabelError(str(e)) from e
     for w in warnings:
@@ -836,11 +947,13 @@ def generate_label():
 
     elif mode == 7:
         logger.info(f"Generando etiqueta - modo 7 (Leica producto {leica_variant.get()})")
-        path, warnings = Impr_Leica_product_label(leica_variant.get(), leica_imei.get(), leica_prod_sn.get())
+        path, warnings = Impr_Leica_product_label(leica_variant.get(), leica_imei.get(),
+                                                  leica_prod_sn.get(), dpmm=_product_dpmm())
     
     elif mode == 8:
         logger.info(f"Generando etiqueta - modo 8 (WS producto {leica_variant.get()})")
-        path, warnings = Impr_WS_product_label(leica_variant.get(), leica_imei.get(), leica_prod_sn.get())
+        path, warnings = Impr_WS_product_label(leica_variant.get(), leica_imei.get(),
+                                               leica_prod_sn.get(), dpmm=_product_dpmm())
 
     else:
         raise LabelError(f"Modo de etiqueta desconocido: {mode}")
@@ -916,16 +1029,17 @@ def print_label():
         # Etiquetas de producto en la Zebra (ZPL raw)
         if mode in QL_PRODUCT_MODES and ZEBRA_PRINTER:
             zs = zebra_settings()
+            z_dpi, z_dpmm = zebra_resolution()
             dx, dy = ZEBRA_SHIFT_MM
-            logger.debug(f"Impresión Zebra -> {ZEBRA_PRINTER} ({ZEBRA_DPMM:g} p/mm, giro {ZEBRA_ROTATE}°, "
+            logger.debug(f"Impresión Zebra -> {ZEBRA_PRINTER} ({z_dpi} dpi = {z_dpmm} p/mm, giro {ZEBRA_ROTATE}°, "
                          f"desplazamiento dcha {dx} mm / arriba {dy} mm, brillo {zs['brightness']:g} / "
                          f"contraste {zs['contrast']:g}, darkness {zs['darkness']}, velocidad {zs['speed']})")
             st = WS_label.print_zebra(path, ZEBRA_PRINTER, copies=n,
                                       zpl_path=os.path.join(OUTPUT_DIR, "output_zebra.zpl"),
                                       bitmap_path=os.path.join(OUTPUT_DIR, "output_zebra_bitmap.png"),
-                                      dpmm=ZEBRA_DPMM, rotate=ZEBRA_ROTATE, threshold=ZEBRA_THRESHOLD,
+                                      dpmm=z_dpmm, src_dpmm=z_dpmm, rotate=ZEBRA_ROTATE, threshold=ZEBRA_THRESHOLD,
                                       shift_right_mm=dx, shift_up_mm=dy, **zs)
-            logger.info(f"Enviadas {n} copia(s) a la Zebra por {st['via']}. ZPL: {st['zpl_path']}")
+            logger.info(f"Enviadas {n} copia(s) a la Zebra ({z_dpi} dpi) por {st['via']}. ZPL: {st['zpl_path']}")
             messagebox.showinfo("Impresión", f"Enviadas {n} etiqueta(s) a la Zebra correctamente.")
             for v in clear_vars:
                 v.set("")
@@ -996,7 +1110,7 @@ def print_label():
 # =========================================================================
 
 root = tk.Tk()
-root.title("WS Labelling - Rev 4.1")
+root.title("WS Labelling - Rev 4.1.1")
 monitor = get_monitors()[0]
 root.geometry(f"{monitor.width}x{monitor.height}")
 
@@ -1045,9 +1159,11 @@ log_text.pack(side="bottom", fill="both", expand=True, padx=5, pady=(0, 5))
 log_scroll.config(command=log_text.yview)
 
 logger.addHandler(TkTextHandler(log_text))
-logger.info("Aplicación iniciada - WS Labelling Rev 4.1")
+logger.info("Aplicación iniciada - WS Labelling Rev 4.1.1")
 for _w in CONFIG_WARNINGS:
     logger.warning(_w)
+for _i in CONFIG_INFO:
+    logger.info(_i)
 logger.info(f"Calibración QL: packaging {list(LEICA_QL_SHIFT_MM)} / producto {list(LEICA_PRODUCT_QL_SHIFT_MM)} mm"
             f" | Zebra {list(ZEBRA_SHIFT_MM)} mm")
 logger.info(f"Carpeta de trabajo: {OUTPUT_DIR}")
@@ -1068,7 +1184,8 @@ except LabelError as _e:
 if ZEBRA_PRINTER:
     try:
         _z = zebra_settings()
-        logger.info(f"Etiquetas de producto -> Zebra '{ZEBRA_PRINTER}' (ZPL raw, {ZEBRA_DPMM:g} p/mm): "
+        _zdpi, _zdpmm = zebra_resolution()
+        logger.info(f"Etiquetas de producto -> Zebra '{ZEBRA_PRINTER}' (ZPL raw, {_zdpi} dpi = {_zdpmm} p/mm): "
                     f"brillo {_z['brightness']:g} / contraste {_z['contrast']:g} / "
                     f"darkness {_z['darkness']} / velocidad {_z['speed']}")
     except LabelError as _e:
